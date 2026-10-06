@@ -1,0 +1,53 @@
+{
+  "name": "vega-budget-tracker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "demo": "npm run build && .\\backend\\.venv\\Scripts\\python.exe -m backend.vega.presentation",
+    "demo:sqlite": "npm run build && .\\backend\\.venv\\Scripts\\python.exe -m backend.vega.demo",
+    "migrate:demo": ".\\backend\\.venv\\Scripts\\python.exe -m backend.vega.migrate_presentation",
+    "dev": "vite --port=3000 --host=0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "api": ".\\backend\\.venv\\Scripts\\python.exe -m uvicorn backend.vega.main:app --host 0.0.0.0 --port 8000",
+    "dev:api": ".\\backend\\.venv\\Scripts\\python.exe -m uvicorn backend.vega.main:app --reload --host 0.0.0.0 --port 8000",
+    "migrate": ".\\backend\\.venv\\Scripts\\alembic.exe -c backend/alembic.ini upgrade head",
+    "seed": ".\\backend\\.venv\\Scripts\\python.exe -m backend.vega.seed",
+    "test:python": ".\\backend\\.venv\\Scripts\\python.exe -m pytest backend/tests -q",
+    "test": "npm run lint && npm run test:python"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@supabase/storage-js": "^2.117.1",
+    "@supabase/supabase-js": "^2.117.1",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "canvas-confetti": "^1.9.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "multer": "^2.4.0",
+    "pg": "^8.23.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.12",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.25.0",
+    "lightningcss": "^1.33.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  }
+}

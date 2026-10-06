@@ -13,6 +13,7 @@
 | Fiscal period source | Old timeline/presentation wording refers to transaction date; FRD and locked Excel spec say GL `Pd.` is authoritative and `Date` is only a cross-check. | Use `Pd.`; report date disagreement as a warning without changing the period. | The higher-priority FRD and locked file contract resolve the older wording. |
 | Local Git state | Workspace has no `.git` repository or `.gitignore`. | Initialize a local repository on `feature/task-13-30`; ignore `.env`, generated files, temporary uploads, and client Excel workbooks before staging. | User explicitly required a new branch and small local commits. No push will be made. |
 | Database service | `.env` points to a host that does not resolve; no local PostgreSQL service, `psql`, or Docker is available. | Continue implementation and tests that do not require a live server; do not claim migration or DB integration is verified until PostgreSQL is provided. | Installing or changing the user's database service requires system capabilities not present in this environment. |
+| Product UI and data | Existing handoff treats the React app as a fixture prototype; latest user instruction says the application will be used live and must not use fake data/demo controls. | Keep the original VEGA layout/visual language, remove quick-demo identity switching and Supabase claims from active routes, and use API data only. Do not display fixture finance values as real KPIs. | A production workflow must not impersonate authentication or misrepresent financial data. |
 
 ## Scope boundary
 

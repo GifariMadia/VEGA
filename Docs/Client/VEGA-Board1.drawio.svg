@@ -1,0 +1,440 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="2051px" height="745px" viewBox="-0.5 -0.5 2051 745" content="&lt;mxfile scale=&quot;1&quot; border=&quot;0&quot;&gt;&lt;diagram id=&quot;vega-board&quot; name=&quot;VEGA Board&quot;&gt;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&lt;/diagram&gt;&lt;diagram id=&quot;vega-board-koreksi&quot; name=&quot;Koreksi Excel (MVP)&quot;&gt;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&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <defs/>
+    <g>
+        <g>
+            <rect x="0" y="0" width="2050" height="34" fill="#1f3f8f" stroke="none" pointer-events="all" style="fill: light-dark(rgb(31, 63, 143), rgb(158, 185, 254));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 2038px; height: 1px; padding-top: 17px; margin-left: 12px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #FFFFFF; ">
+                                <div style="display: inline-block; font-size: 13px; font-family: &quot;Helvetica&quot;; color: light-dark(#FFFFFF, #121212); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">
+                                    KOREKSI &amp; ATURAN BARU — hasil pembacaan langsung Budget Dummy.xlsx dan GL Dummy.xlsx (MVP: section MIS000 · sheet CORE · sheet "MIS (FC)") · satuan USD
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="12" y="21" fill="#FFFFFF" font-family="&quot;Helvetica&quot;" font-size="13px" font-weight="bold">
+                        KOREKSI &amp; ATURAN BARU — hasil pembacaan langsung Budget Dummy.xlsx dan GL Dummy.xlsx (MVP: section MIS000 · sheet CORE · sheet "MIS (FC)") · satuan USD
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="0" y="54" width="1000" height="200" fill="#fde7e9" stroke="#c00000" pointer-events="all" style="fill: light-dark(rgb(253, 231, 233), rgb(48, 30, 31)); stroke: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 67px; margin-left: 10px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b style="color: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));">
+                                        KRITIS — label bulan di baris 6 tidak unik
+                                    </b>
+                                    <br/>
+                                    "Apr '26" muncul 2 kali (BD dan BP). "Apr '25" muncul 4 kali. Pembedanya hanya
+                                    <b>
+                                        baris 5
+                                    </b>
+                                    :
+                                    <br/>
+                                    <br/>
+                                    H:S    baris5 = Actual  Apr'25–Mar'26  — abaikan
+                                    <br/>
+                                    T:AE   baris5 = Q3      Apr'25–Mar'26  — abaikan
+                                    <br/>
+                                    AF:AQ  baris5 = Q2      Apr'25–Mar'26  — abaikan
+                                    <br/>
+                                    AR:BC  baris5 = Q1      Apr'25–Mar'26  — abaikan
+                                    <br/>
+                                    <b>
+                                        BD:BO  baris5 = Budget  Apr'26–Mar'27  — INI YANG DIBACA
+                                    </b>
+                                    <br/>
+                                    BP:CA  baris5 = Gap     Apr'26–Mar'27  — abaikan
+                                    <br/>
+                                    <br/>
+                                    Pemeriksaan tata letak: cari blok yang baris 5-nya
+                                    <b>
+                                        Budget
+                                    </b>
+                                    , lalu pastikan baris 6 di bawahnya terbaca Apr…Mar berurutan. BD:BO adalah posisi
+                                    <i>
+                                        yang diharapkan
+                                    </i>
+                                    , bukan posisi yang dipaksakan.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="10" y="78" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        KRITIS — label bulan di baris 6 tidak unik...
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="1050" y="54" width="1000" height="200" fill="#fde7e9" stroke="#c00000" pointer-events="all" style="fill: light-dark(rgb(253, 231, 233), rgb(48, 30, 31)); stroke: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 67px; margin-left: 1060px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b style="color: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));">
+                                        KRITIS — header L/M dan N/O sama persis
+                                    </b>
+                                    <br/>
+                                    L = indeks 11  "Debits"   M = 12  "Credits"  — mata uang asal,
+                                    <b>
+                                        TIDAK dipakai
+                                    </b>
+                                    <br/>
+                                    <b>
+                                        N = indeks 13  "Debits"   O = 14  "Credits"  — hasil konversi USD, DIPAKAI
+                                    </b>
+                                    <br/>
+                                    <br/>
+                                    Tidak ada tulisan "(konversi)" di berkas — label itu karangan papan lama.
+                                    <b>
+                                        Petakan kolom lewat indeks, jangan lewat nama header.
+                                    </b>
+                                    Pencocokan nama diam-diam membaca L/M dan menggelembungkan setiap realisasi kira-kira sebesar nilai kurs.
+                                    <br/>
+                                    Pemeriksaan header wajib menegaskan indeks 11–14 = Debits, Credits, Debits, Credits berurutan.
+                                    <br/>
+                                    <br/>
+                                    N = L / Exch. Rate cocok di 63/63 baris dalam lingkup — boleh ditegaskan, tapi
+                                    <b>
+                                        nilai yang dipakai selalu isi kolom N
+                                    </b>
+                                    . Kurs berbeda tiap baris, bahkan sesama IDR: 17546 · 17141 · 16828 · 16309 · 17521,2121212 · 17740,587918.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="1060" y="78" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        KRITIS — header L/M dan N/O sama persis...
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="0" y="270" width="1000" height="128" fill="#ffffff" stroke="#333333" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(51, 51, 51), rgb(193, 193, 193));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 283px; margin-left: 10px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b>
+                                        Baris subtotal ada 9, bukan 2
+                                    </b>
+                                    — baris 15, 87, 89, 100, 172, 174, 186, 261, 263.
+                                    <br/>
+                                    Tiga di antaranya punya
+                                    <b>
+                                        angka di kolom A
+                                    </b>
+                                    : baris 89 =
+                                    <b>
+                                        123
+                                    </b>
+                                    , baris 174 =
+                                    <b>
+                                        1234
+                                    </b>
+                                    , baris 263 =
+                                    <b>
+                                        770101000
+                                    </b>
+                                    — yang terakhir mirip kode COA yang sah.
+                                    <br/>
+                                    <b>
+                                        Aturan: lewati baris bila kolom B memuat kata TOTAL.
+                                    </b>
+                                    Pemeriksaan ini harus didahulukan; menyaring lewat kolom A saja akan memuat TOTAL SGA DEPRECIATION sebagai akun.
+                                    <br/>
+                                    Kolom A juga bertipe campur: 237 teks, 6 bilangan bulat, 21 kosong — selalu str().strip() dulu.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="10" y="294" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        Baris subtotal ada 9, bukan 2 — baris 15, 87, 89, 100, 172, 174, 186, 261, 263....
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="1050" y="270" width="1000" height="128" fill="#eaf3e9" stroke="#4a7c3f" pointer-events="all" style="fill: light-dark(rgb(234, 243, 233), rgb(25, 33, 24)); stroke: light-dark(rgb(74, 124, 63), rgb(114, 157, 105));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 283px; margin-left: 1060px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b style="color: light-dark(rgb(74, 124, 63), rgb(114, 157, 105));">
+                                        Filter baris GL — 63 + 10 = 73 baris
+                                    </b>
+                                    <br/>
+                                    Masuk lingkup bila
+                                    <b>
+                                        salah satu
+                                    </b>
+                                    terpenuhi:
+                                    <br/>
+                                    (a) 3 segmen dan segmen ke-3 = MIS000  →
+                                    <b>
+                                        63 baris
+                                    </b>
+                                    <br/>
+                                    (b) 2 segmen dan kode COA-nya ada di master anggaran  →
+                                    <b>
+                                        10 baris
+                                    </b>
+                                    <br/>
+                                    772404000-A7744 Welfare Expense SGA (8) · 771501000-A7744 Handling Charge (2)
+                                    <br/>
+                                    Filter yang ditulis parts[2]=="MIS000" membuang klausa (b) tanpa suara — padahal itu akun yang MIS punya baris anggarannya. Nilainya kecil (7,51) tapi masalahnya diamnya, bukan nominalnya. Laporkan tiap baris klausa (b) sebagai "dimuat, section kosong".
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="1060" y="294" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        Filter baris GL — 63 + 10 = 73 baris...
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="0" y="414" width="1000" height="96" fill="#fde7e9" stroke="#c00000" pointer-events="all" style="fill: light-dark(rgb(253, 231, 233), rgb(48, 30, 31)); stroke: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 427px; margin-left: 10px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b style="color: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));">
+                                        Baris 4953 rusak
+                                    </b>
+                                    <br/>
+                                    Pd., Date dan Account Number semuanya kosong;
+                                    <b>
+                                        kolom N dan O berisi teks '#DIV/0!'
+                                    </b>
+                                    .
+                                    <br/>
+                                    Aritmatika melempar TypeError, float() melempar ValueError, try/except yang longgar mencatatnya sebagai 0.
+                                    <br/>
+                                    Urutan aturan per baris: (1) Account Number kosong → lewati · (2) Pd. kosong → lewati · (3) N atau O bukan angka →
+                                    <b>
+                                        tolak berkas
+                                    </b>
+                                    · (4) N dan O sama-sama terisi →
+                                    <b>
+                                        tolak berkas
+                                    </b>
+                                    · (5) selain itu → muat. Aturan (4) tidak pernah kena di berkas contoh (0 dari 4.952) — itulah yang membuat net = N − O aman.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="10" y="438" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        Baris 4953 rusak...
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="1050" y="414" width="1000" height="96" fill="#fde7e9" stroke="#c00000" pointer-events="all" style="fill: light-dark(rgb(253, 231, 233), rgb(48, 30, 31)); stroke: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 427px; margin-left: 1060px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b style="color: light-dark(rgb(192, 0, 0), rgb(255, 167, 167));">
+                                        Anggaran negatif membalik konvensi tanda
+                                    </b>
+                                    <br/>
+                                    772502000 Internal cost allocation: FY −368.593,63, Juni
+                                    <b>
+                                        −29.083,58
+                                    </b>
+                                    , realisasi
+                                    <b>
+                                        0,00
+                                    </b>
+                                    .
+                                    <br/>
+                                    Rumus polos memberi selisih = −29.083,58 →
+                                    <b>
+                                        OVERBUDGET pada akun yang belum belanja sepeser pun
+                                    </b>
+                                    . Baris ini kredit balik ke departemen, bukan kapasitas belanja.
+                                    <br/>
+                                    <b>
+                                        Aturan:
+                                    </b>
+                                    anggaran bulan &lt; 0 → beri label
+                                    <b>
+                                        ALOKASI
+                                    </b>
+                                    , tampilkan selisihnya, keluarkan dari status under/over dan dari hitungan jumlah akun overbudget. Nilainya tetap masuk total.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="1060" y="438" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        Anggaran negatif membalik konvensi tanda...
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="0" y="526" width="1000" height="118" fill="#ffffff" stroke="#333333" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(51, 51, 51), rgb(193, 193, 193));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 539px; margin-left: 10px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b>
+                                        Fakta terverifikasi — berkas anggaran
+                                    </b>
+                                    <br/>
+                                    <b>
+                                        240 baris data, 238 kode unik
+                                    </b>
+                                    (papan lama menulis 241).
+                                    <br/>
+                                    Kode ganda, keempat barisnya bernilai 0: 740199001 (baris 14 dan 99) · 761001000 (baris 184 dan 185). Ambil kemunculan pertama, laporkan yang kedua.
+                                    <br/>
+                                    <b>
+                                        Hanya 19 dari 240 baris yang anggarannya bukan nol.
+                                    </b>
+                                    <br/>
+                                    Subtotal: TOTAL SGA LABOR 103.195,38 · EXPENSES 198.027,38 · DEPRECIATION 67.370,88 — jumlah ketiganya 368.593,64, kurang 2.933,18 dari E1.
+                                    <br/>
+                                    <b>
+                                        Anggaran depresiasi hanya ada di baris subtotal
+                                    </b>
+                                    ; semua baris rinciannya nol. Ini akar dari 9 baris GL tanpa padanan — 770102000 dan 770107001 keduanya depresiasi.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="10" y="550" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        Fakta terverifikasi — berkas anggaran...
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <rect x="1050" y="526" width="1000" height="118" fill="#ffffff" stroke="#333333" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(51, 51, 51), rgb(193, 193, 193));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 990px; height: 1px; padding-top: 539px; margin-left: 1060px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b>
+                                        Persentase dan proyeksi
+                                    </b>
+                                    <br/>
+                                    <b>
+                                        persen = selisih / abs(anggaran bulan) × 100
+                                    </b>
+                                    , hanya saat anggaran bulan ≠ 0. Selain itu tampilkan
+                                    <b>
+                                        —
+                                    </b>
+                                    : jangan 0%, jangan ∞, jangan galat pembagian. Kena di 771199000, 771501000, dan 771502000 (anggaran FY 11.071,38 tapi Juni = 0 —
+                                    <b>
+                                        anggaran tahunan tidak dibagi rata per bulan
+                                    </b>
+                                    ).
+                                    <br/>
+                                    <br/>
+                                    <b>
+                                        proyeksi = realisasi sampai kini / months_loaded × 12
+                                    </b>
+                                    — months_loaded = jumlah periode yang benar-benar punya data GL (di sini 1). Jangan pakai bulan kalender: GL terlambat satu bulan, jadi bulan kalender selalu meremehkan laju belanja dan melaporkan "aman" padahal tidak.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="1060" y="550" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        Persentase dan proyeksi...
+                    </text>
+                </switch>
+            </g>
+        </g>
+        <g>
+            <path d="M 0 660 L 2036 660 L 2050 674 L 2050 744 L 0 744 L 0 660 Z" fill="#fff9d6" stroke="#c9a227" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(255, 249, 214), rgb(30, 25, 0)); stroke: light-dark(rgb(201, 162, 39), rgb(133, 99, 0));"/>
+            <path d="M 2036 660 L 2036 674 L 2050 674" fill="none" stroke="#c9a227" stroke-miterlimit="10" pointer-events="all" style="stroke: light-dark(rgb(201, 162, 39), rgb(133, 99, 0));"/>
+        </g>
+        <g>
+            <g transform="translate(-0.5 -0.5)">
+                <switch>
+                    <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe flex-start; justify-content: unsafe flex-start; width: 2042px; height: 1px; padding-top: 669px; margin-left: 8px;">
+                            <div style="box-sizing: border-box; font-size: 0; text-align: left; color: #000000; ">
+                                <div style="display: inline-block; font-size: 11px; font-family: &quot;Helvetica&quot;; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                    <b>
+                                        Data contoh tidak berskala wajar.
+                                    </b>
+                                    Baris IDR terkonversi jadi 1–3 USD sementara baris USD membawa 20 ribu–200 ribu, sehingga gaji Juni terbaca 1,31 melawan anggaran bulanan 4.989,86. Angka-angka di papan ini benar sebagai
+                                    <i>
+                                        patokan aritmatika
+                                    </i>
+                                    dan wajib direproduksi persis, tetapi
+                                    <b>
+                                        jangan
+                                    </b>
+                                    menarik kesimpulan bisnis, menyetel ambang toleransi, atau menjalankan uji "cocokkan dengan pivot klien" di atas nominal ini.
+                                    <br/>
+                                    Total realisasi Juni 2026 =
+                                    <b>
+                                        488.981,16 USD
+                                    </b>
+                                    dari 73 baris. Filter MIS000 murni memberi 488.973,64 dari 63 baris; selisih 7,51 adalah sepuluh baris tanpa segmen section.
+                                </div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                    <text x="8" y="680" fill="light-dark(#000000, #ffffff)" font-family="&quot;Helvetica&quot;" font-size="11px">
+                        Data contoh tidak berskala wajar. Baris IDR terkonversi jadi 1–3 USD sementara baris USD membawa 20 ribu–200 ribu, sehingga gaji Juni terbaca 1,31 melawan anggaran bulanan 4.989,86. Angka-angka di papan ini benar sebagai patokan aritmatika dan wajib direproduksi persis, tetapi jangan menarik kesimpulan bisnis, menyetel ambang toleransi, atau menjalankan uji "cocokkan den...
+                    </text>
+                </switch>
+            </g>
+        </g>
+    </g>
+    <switch>
+        <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/>
+        <a transform="translate(0,-5)" xlink:href="https://www.drawio.com/doc/faq/svg-export-text-problems" target="_blank">
+            <text text-anchor="middle" font-size="10px" x="50%" y="100%">
+                Text is not SVG - cannot display
+            </text>
+        </a>
+    </switch>
+</svg>

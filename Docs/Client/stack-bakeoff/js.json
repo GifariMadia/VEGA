@@ -1,0 +1,741 @@
+{
+ "engine": "node/exceljs",
+ "seconds": 3.16,
+ "peak_heap_mb": 1392,
+ "packages": 97,
+ "helper_lines": 14,
+ "total": "488981.16",
+ "skipped": 1,
+ "rows": [
+  {
+   "account": "772001001-A7744-MIS000",
+   "coa": "772001001",
+   "description": "Light and Heat Expense SGA (Electricity)",
+   "curr": "IDR",
+   "debit": "2.25",
+   "credit": "0.00",
+   "net": "2.25",
+   "clause": "A"
+  },
+  {
+   "account": "760101000-A7744-MIS000",
+   "coa": "760101000",
+   "description": "Salary(Full-time) SGA",
+   "curr": "IDR",
+   "debit": "0.93",
+   "credit": "0.00",
+   "net": "0.93",
+   "clause": "A"
+  },
+  {
+   "account": "760104000-A7744-MIS000",
+   "coa": "760104000",
+   "description": "Benefits-Employer's portion SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "A"
+  },
+  {
+   "account": "760104000-A7744-MIS000",
+   "coa": "760104000",
+   "description": "Benefits-Employer's portion SGA",
+   "curr": "IDR",
+   "debit": "2.49",
+   "credit": "0.00",
+   "net": "2.49",
+   "clause": "A"
+  },
+  {
+   "account": "760103000-A7744-MIS000",
+   "coa": "760103000",
+   "description": "Overtime Hours(Full-time) SGA",
+   "curr": "IDR",
+   "debit": "1.93",
+   "credit": "0.00",
+   "net": "1.93",
+   "clause": "A"
+  },
+  {
+   "account": "760104000-A7744-MIS000",
+   "coa": "760104000",
+   "description": "Benefits-Employer's portion SGA",
+   "curr": "IDR",
+   "debit": "2.31",
+   "credit": "0.00",
+   "net": "2.31",
+   "clause": "A"
+  },
+  {
+   "account": "772202000-A7744-MIS000",
+   "coa": "772202000",
+   "description": "Communication Expense(IT) SGA",
+   "curr": "IDR",
+   "debit": "2.72",
+   "credit": "0.00",
+   "net": "2.72",
+   "clause": "A"
+  },
+  {
+   "account": "771502000-A7744-MIS000",
+   "coa": "771502000",
+   "description": "Handling Charge and Professional Fee(IT) SGA",
+   "curr": "IDR",
+   "debit": "2.82",
+   "credit": "0.00",
+   "net": "2.82",
+   "clause": "A"
+  },
+  {
+   "account": "772001001-A7744-MIS000",
+   "coa": "772001001",
+   "description": "Light and Heat Expense SGA (Electricity)",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.03",
+   "net": "-0.03",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "33925.00",
+   "credit": "0.00",
+   "net": "33925.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "31668.00",
+   "credit": "0.00",
+   "net": "31668.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "24094.00",
+   "credit": "0.00",
+   "net": "24094.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "22075.00",
+   "credit": "0.00",
+   "net": "22075.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "7107.00",
+   "credit": "0.00",
+   "net": "7107.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "9201.00",
+   "credit": "0.00",
+   "net": "9201.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "44960.00",
+   "credit": "0.00",
+   "net": "44960.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "37710.00",
+   "credit": "0.00",
+   "net": "37710.00",
+   "clause": "A"
+  },
+  {
+   "account": "771199000-A7744-MIS000",
+   "coa": "771199000",
+   "description": "Subcontract Expense(Other)-G SGA",
+   "curr": "USD",
+   "debit": "20513.00",
+   "credit": "0.00",
+   "net": "20513.00",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "2.73",
+   "credit": "0.00",
+   "net": "2.73",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.89",
+   "net": "-0.89",
+   "clause": "B"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "B"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.59",
+   "net": "-0.59",
+   "clause": "B"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.06",
+   "net": "-0.06",
+   "clause": "B"
+  },
+  {
+   "account": "771501000-A7744-MIS000",
+   "coa": "771501000",
+   "description": "Handling Charge and Professional Fee SGA",
+   "curr": "IDR",
+   "debit": "2.59",
+   "credit": "0.00",
+   "net": "2.59",
+   "clause": "A"
+  },
+  {
+   "account": "771501000-A7744",
+   "coa": "771501000",
+   "description": "Handling Charge and Professional Fee SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.11",
+   "net": "-0.11",
+   "clause": "B"
+  },
+  {
+   "account": "770107001-A7744-MIS000",
+   "coa": "770107001",
+   "description": "Depreciation of Fixture and Fitting SGA",
+   "curr": "USD",
+   "debit": "43846.00",
+   "credit": "0.00",
+   "net": "43846.00",
+   "clause": "A"
+  },
+  {
+   "account": "770102000-A7744-MIS000",
+   "coa": "770102000",
+   "description": "Depreciation of Machinery SGA",
+   "curr": "USD",
+   "debit": "25990.00",
+   "credit": "0.00",
+   "net": "25990.00",
+   "clause": "A"
+  },
+  {
+   "account": "770107001-A7744-MIS000",
+   "coa": "770107001",
+   "description": "Depreciation of Fixture and Fitting SGA",
+   "curr": "USD",
+   "debit": "16821.00",
+   "credit": "0.00",
+   "net": "16821.00",
+   "clause": "A"
+  },
+  {
+   "account": "770107001-A7744-MIS000",
+   "coa": "770107001",
+   "description": "Depreciation of Fixture and Fitting SGA",
+   "curr": "USD",
+   "debit": "1565.00",
+   "credit": "0.00",
+   "net": "1565.00",
+   "clause": "A"
+  },
+  {
+   "account": "770107001-A7744-MIS000",
+   "coa": "770107001",
+   "description": "Depreciation of Fixture and Fitting SGA",
+   "curr": "USD",
+   "debit": "40292.00",
+   "credit": "0.00",
+   "net": "40292.00",
+   "clause": "A"
+  },
+  {
+   "account": "770107001-A7744-MIS000",
+   "coa": "770107001",
+   "description": "Depreciation of Fixture and Fitting SGA",
+   "curr": "USD",
+   "debit": "11473.00",
+   "credit": "0.00",
+   "net": "11473.00",
+   "clause": "A"
+  },
+  {
+   "account": "770107001-A7744-MIS000",
+   "coa": "770107001",
+   "description": "Depreciation of Fixture and Fitting SGA",
+   "curr": "USD",
+   "debit": "25565.00",
+   "credit": "0.00",
+   "net": "25565.00",
+   "clause": "A"
+  },
+  {
+   "account": "760102000-A7744-MIS000",
+   "coa": "760102000",
+   "description": "Bonus(Full-time) SGA",
+   "curr": "USD",
+   "debit": "23640.00",
+   "credit": "0.00",
+   "net": "23640.00",
+   "clause": "A"
+  },
+  {
+   "account": "760106000-A7744-MIS000",
+   "coa": "760106000",
+   "description": "Cost of Retirement Benefit SGA",
+   "curr": "USD",
+   "debit": "45077.00",
+   "credit": "0.00",
+   "net": "45077.00",
+   "clause": "A"
+  },
+  {
+   "account": "760102001-A7744-MIS000",
+   "coa": "760102001",
+   "description": "THR (Full-time) SGA",
+   "curr": "USD",
+   "debit": "44905.00",
+   "credit": "0.00",
+   "net": "44905.00",
+   "clause": "A"
+  },
+  {
+   "account": "760104000-A7744-MIS000",
+   "coa": "760104000",
+   "description": "Benefits-Employer's portion SGA",
+   "curr": "IDR",
+   "debit": "1.56",
+   "credit": "0.00",
+   "net": "1.56",
+   "clause": "A"
+  },
+  {
+   "account": "760101000-A7744-MIS000",
+   "coa": "760101000",
+   "description": "Salary(Full-time) SGA",
+   "curr": "IDR",
+   "debit": "0.69",
+   "credit": "0.00",
+   "net": "0.69",
+   "clause": "A"
+  },
+  {
+   "account": "760104000-A7744-MIS000",
+   "coa": "760104000",
+   "description": "Benefits-Employer's portion SGA",
+   "curr": "IDR",
+   "debit": "2.70",
+   "credit": "0.00",
+   "net": "2.70",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "2.24",
+   "credit": "0.00",
+   "net": "2.24",
+   "clause": "B"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.52",
+   "credit": "0.00",
+   "net": "0.52",
+   "clause": "B"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "2.20",
+   "credit": "0.00",
+   "net": "2.20",
+   "clause": "B"
+  },
+  {
+   "account": "772404000-A7744",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "2.40",
+   "credit": "0.00",
+   "net": "2.40",
+   "clause": "B"
+  },
+  {
+   "account": "760104000-A7744-MIS000",
+   "coa": "760104000",
+   "description": "Benefits-Employer's portion SGA",
+   "curr": "IDR",
+   "debit": "0.06",
+   "credit": "0.00",
+   "net": "0.06",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "1.87",
+   "credit": "0.00",
+   "net": "1.87",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.36",
+   "credit": "0.00",
+   "net": "0.36",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "2.81",
+   "credit": "0.00",
+   "net": "2.81",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.74",
+   "credit": "0.00",
+   "net": "0.74",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "1.73",
+   "credit": "0.00",
+   "net": "1.73",
+   "clause": "A"
+  },
+  {
+   "account": "771501000-A7744",
+   "coa": "771501000",
+   "description": "Handling Charge and Professional Fee SGA",
+   "curr": "IDR",
+   "debit": "1.81",
+   "credit": "0.00",
+   "net": "1.81",
+   "clause": "B"
+  },
+  {
+   "account": "772001002-A7744-MIS000",
+   "coa": "772001002",
+   "description": "Utility Cost SGA (Other)",
+   "curr": "IDR",
+   "debit": "1.22",
+   "credit": "0.00",
+   "net": "1.22",
+   "clause": "A"
+  },
+  {
+   "account": "772001001-A7744-MIS000",
+   "coa": "772001001",
+   "description": "Light and Heat Expense SGA (Electricity)",
+   "curr": "IDR",
+   "debit": "1.40",
+   "credit": "0.00",
+   "net": "1.40",
+   "clause": "A"
+  },
+  {
+   "account": "772403000-A7744-MIS000",
+   "coa": "772403000",
+   "description": "Office Supply SGA",
+   "curr": "IDR",
+   "debit": "2.06",
+   "credit": "0.00",
+   "net": "2.06",
+   "clause": "A"
+  },
+  {
+   "account": "772201000-A7744-MIS000",
+   "coa": "772201000",
+   "description": "Communication Line Expense SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "A"
+  },
+  {
+   "account": "770701000-A7744-MIS000",
+   "coa": "770701000",
+   "description": "Subcontract Expense(IT)-G SGA",
+   "curr": "USD",
+   "debit": "0.00",
+   "credit": "13839.10",
+   "net": "-13839.10",
+   "clause": "A"
+  },
+  {
+   "account": "772201000-A7744-MIS000",
+   "coa": "772201000",
+   "description": "Communication Line Expense SGA",
+   "curr": "IDR",
+   "debit": "0.80",
+   "credit": "0.00",
+   "net": "0.80",
+   "clause": "A"
+  },
+  {
+   "account": "771502000-A7744-MIS000",
+   "coa": "771502000",
+   "description": "Handling Charge and Professional Fee(IT) SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.02",
+   "net": "-0.02",
+   "clause": "A"
+  },
+  {
+   "account": "760102001-A7744-MIS000",
+   "coa": "760102001",
+   "description": "THR (Full-time) SGA",
+   "curr": "USD",
+   "debit": "0.00",
+   "credit": "370.97",
+   "net": "-370.97",
+   "clause": "A"
+  },
+  {
+   "account": "771199000-A7744-MIS000",
+   "coa": "771199000",
+   "description": "Subcontract Expense(Other)-G SGA",
+   "curr": "USD",
+   "debit": "0.00",
+   "credit": "110.72",
+   "net": "-110.72",
+   "clause": "A"
+  },
+  {
+   "account": "772201000-A7744-MIS000",
+   "coa": "772201000",
+   "description": "Communication Line Expense SGA",
+   "curr": "IDR",
+   "debit": "1.82",
+   "credit": "0.00",
+   "net": "1.82",
+   "clause": "A"
+  },
+  {
+   "account": "760104000-A7744-MIS000",
+   "coa": "760104000",
+   "description": "Benefits-Employer's portion SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.09",
+   "net": "-0.09",
+   "clause": "A"
+  },
+  {
+   "account": "760101000-A7744-MIS000",
+   "coa": "760101000",
+   "description": "Salary(Full-time) SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.32",
+   "net": "-0.32",
+   "clause": "A"
+  },
+  {
+   "account": "770107001-A7744-MIS000",
+   "coa": "770107001",
+   "description": "Depreciation of Fixture and Fitting SGA",
+   "curr": "USD",
+   "debit": "0.00",
+   "credit": "5514.79",
+   "net": "-5514.79",
+   "clause": "A"
+  },
+  {
+   "account": "772202000-A7744-MIS000",
+   "coa": "772202000",
+   "description": "Communication Expense(IT) SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "A"
+  },
+  {
+   "account": "772001001-A7744-MIS000",
+   "coa": "772001001",
+   "description": "Light and Heat Expense SGA (Electricity)",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.01",
+   "net": "-0.01",
+   "clause": "A"
+  },
+  {
+   "account": "772001002-A7744-MIS000",
+   "coa": "772001002",
+   "description": "Utility Cost SGA (Other)",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.98",
+   "credit": "0.00",
+   "net": "0.98",
+   "clause": "A"
+  },
+  {
+   "account": "760103000-A7744-MIS000",
+   "coa": "760103000",
+   "description": "Overtime Hours(Full-time) SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "A"
+  },
+  {
+   "account": "770102000-A7744-MIS000",
+   "coa": "770102000",
+   "description": "Depreciation of Machinery SGA",
+   "curr": "USD",
+   "debit": "0.00",
+   "credit": "99.45",
+   "net": "-99.45",
+   "clause": "A"
+  },
+  {
+   "account": "771501000-A7744-MIS000",
+   "coa": "771501000",
+   "description": "Handling Charge and Professional Fee SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "A"
+  },
+  {
+   "account": "772403000-A7744-MIS000",
+   "coa": "772403000",
+   "description": "Office Supply SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.00",
+   "net": "-0.00",
+   "clause": "A"
+  },
+  {
+   "account": "772404000-A7744-MIS000",
+   "coa": "772404000",
+   "description": "Welfare Expense SGA",
+   "curr": "IDR",
+   "debit": "0.00",
+   "credit": "0.02",
+   "net": "-0.02",
+   "clause": "A"
+  },
+  {
+   "account": "760102000-A7744-MIS000",
+   "coa": "760102000",
+   "description": "Bonus(Full-time) SGA",
+   "curr": "USD",
+   "debit": "0.00",
+   "credit": "1017.75",
+   "net": "-1017.75",
+   "clause": "A"
+  },
+  {
+   "account": "760106000-A7744-MIS000",
+   "coa": "760106000",
+   "description": "Cost of Retirement Benefit SGA",
+   "curr": "USD",
+   "debit": "0.00",
+   "credit": "541.64",
+   "net": "-541.64",
+   "clause": "A"
+  }
+ ]
+}

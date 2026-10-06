@@ -3,10 +3,13 @@
 !.env.example
 node_modules/
 dist/
-tmp/uploads/
+tmp/
 __MACOSX/
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 Docs/Source/*.xlsx
+/*.xlsx
+*.db
+backups/

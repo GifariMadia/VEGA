@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="id"><meta charset="utf-8"><title>Bakeoff Excel — VEGA</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--ink:#12263f;--mut:#5a6b82;--line:#dde3ec;--a:#0057b8;--b:#b8560f;--ok:#0a7d4a;--bg:#f6f8fb}
+*{box-sizing:border-box}
+body{margin:0;padding:2rem 1.25rem 4rem;font:15px/1.55 system-ui,Segoe UI,sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:980px;margin:0 auto}
+h1{font-size:1.6rem;margin:0 0 .25rem} h2{font-size:1.1rem;margin:2.5rem 0 .75rem;padding-bottom:.4rem;border-bottom:2px solid var(--line)}
+h3{margin:0 0 .5rem;font-size:.95rem;color:var(--mut);font-weight:600}
+.sub{color:var(--mut);margin:0 0 1.5rem}
+.verdict{background:#e8f5ee;border-left:4px solid var(--ok);padding:.85rem 1rem;border-radius:0 6px 6px 0}
+.verdict b{color:var(--ok)}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:1.1rem}
+.big{font-size:1.75rem;font-weight:700;font-variant-numeric:tabular-nums}
+.lbl{color:var(--mut);font-size:.85rem;margin-bottom:.9rem}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;align-items:center}
+dt{color:var(--mut);font-size:.85rem} dd{margin:0;font-variant-numeric:tabular-nums;font-size:.9rem}
+dd i{display:block;height:5px;border-radius:3px;background:var(--a);margin-top:3px}
+.card:nth-child(2) dd i{background:var(--b)}
+.note{color:var(--mut);font-size:.82rem;margin:.9rem 0 0;padding-top:.7rem;border-top:1px dashed var(--line)}
+pre{background:#fff;border:1px solid var(--line);border-radius:8px;padding:.9rem;overflow-x:auto;font-size:.82rem;margin:0}
+table{width:100%;border-collapse:collapse;background:#fff;font-size:.85rem}
+.scroll{max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+th{position:sticky;top:0;background:#eef2f7;text-align:left;padding:.5rem .6rem;font-size:.78rem;color:var(--mut)}
+td{padding:.35rem .6rem;border-top:1px solid var(--line)}
+.m{font-family:ui-monospace,Consolas,monospace;font-size:.82rem;white-space:nowrap}
+.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bA,.bB{display:inline-block;width:1.3rem;text-align:center;border-radius:3px;font-size:.75rem;font-weight:700;color:#fff;background:var(--a)}
+.bB{background:var(--b)}
+footer{color:var(--mut);font-size:.82rem;margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}
+</style>
+<main>
+<h1>Bakeoff Excel — openpyxl vs ExcelJS</h1>
+<p class="sub">Tugas identik atas file asli <code>Docs/Source/</code>: baca budget master, baca GL sheet
+<code>CORE</code>, terapkan saringan dua klausa, jumlahkan debit dikurangi kredit terkonversi.
+Pendukung <a href="../Stack-Comparison.md">Stack-Comparison.md</a> bagian 5.</p>
+
+<p class="verdict"><b>Kedua engine menghasilkan angka yang sama persis.</b>
+63 + 10 = 73 baris, 488981.16 USD, 1 baris dilewati.
+Ekspor CSV keduanya <b>byte-identical</b> — jadi bedanya bukan soal benar
+atau salah, melainkan berapa banyak kode penjaga yang harus ditulis dan dirawat sendiri.</p>
+
+<h2>Hasil terukur</h2>
+<div class="grid">
+<div class="card">
+      <h3>Opsi A / C — python + openpyxl</h3>
+      <div class="big">488981.16</div><div class="lbl">USD, 73 baris</div>
+      <dl>
+        <dt>Waktu</dt><dd>7.48 s<i style="width:100%"></i></dd>
+        <dt>Puncak heap</dt><dd>96 MB<i style="width:7%"></i></dd>
+        <dt>Paket npm/pip</dt><dd>1</dd>
+        <dt>Kode penjaga</dt><dd>0 baris</dd>
+      </dl><p class="note">read_only=True menyetel baris satu per satu; hanya sheet CORE yang disentuh.</p></div>
+<div class="card">
+      <h3>Opsi B — node + ExcelJS</h3>
+      <div class="big">488981.16</div><div class="lbl">USD, 73 baris</div>
+      <dl>
+        <dt>Waktu</dt><dd>3.16 s<i style="width:42%"></i></dd>
+        <dt>Puncak heap</dt><dd>1,392 MB<i style="width:100%"></i></dd>
+        <dt>Paket npm/pip</dt><dd>97</dd>
+        <dt>Kode penjaga</dt><dd>14 baris</dd>
+      </dl><p class="note">readFile() memuat keempat sheet (32.000 baris) ke memori sebelum satu baris pun dibaca.</p></div>
+</div>
+
+<h2>Bedanya ada di kode, bukan di hasil</h2>
+<div class="grid">
+<div><h3>ExcelJS — sel bisa balik sebagai objek</h3><pre>function plain(v) {
+  if (typeof v === 'object') {
+    if ('error' in v) return v.error;      // '#DIV/0!'
+    if ('result' in v) return v.result;    // sel formula
+    if ('richText' in v)
+      return v.richText.map(t =&gt; t.text).join('');
+    if ('text' in v) return v.text;        // hyperlink
+  }
+  return v;
+}
+// dipakai di <b>setiap</b> pembacaan sel
+row.getCell(14)  // kolom N, 1-indexed</pre></div>
+<div><h3>openpyxl — nilainya langsung</h3><pre>load_workbook(path, data_only=True)
+
+# tidak ada helper
+
+r[13]  # kolom N, 0-indexed</pre></div>
+</div>
+
+<h2>73 baris yang masuk saringan</h2>
+<p class="sub"><span class="bA">A</span> 3 segmen, section <code>MIS000</code> (63 baris) &nbsp;
+<span class="bB">B</span> 2 segmen, COA ada di budget master (10 baris). Klausa B inilah yang hilang
+diam-diam kalau saringan ditulis hanya <code>parts[2] == "MIS000"</code>.</p>
+<div class="scroll"><table><thead><tr><th>Account Number</th><th>Deskripsi</th><th>Curr</th>
+<th class="n">Debit</th><th class="n">Kredit</th><th class="n">Net</th><th>Kl</th></tr></thead>
+<tbody><tr><td class="m">772001001-A7744-MIS000</td><td>Light and Heat Expense SGA (Electricity)</td><td>IDR</td><td class="n">2.25</td><td class="n">0.00</td><td class="n">2.25</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760101000-A7744-MIS000</td><td>Salary(Full-time) SGA</td><td>IDR</td><td class="n">0.93</td><td class="n">0.00</td><td class="n">0.93</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760104000-A7744-MIS000</td><td>Benefits-Employer's portion SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760104000-A7744-MIS000</td><td>Benefits-Employer's portion SGA</td><td>IDR</td><td class="n">2.49</td><td class="n">0.00</td><td class="n">2.49</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760103000-A7744-MIS000</td><td>Overtime Hours(Full-time) SGA</td><td>IDR</td><td class="n">1.93</td><td class="n">0.00</td><td class="n">1.93</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760104000-A7744-MIS000</td><td>Benefits-Employer's portion SGA</td><td>IDR</td><td class="n">2.31</td><td class="n">0.00</td><td class="n">2.31</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772202000-A7744-MIS000</td><td>Communication Expense(IT) SGA</td><td>IDR</td><td class="n">2.72</td><td class="n">0.00</td><td class="n">2.72</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">771502000-A7744-MIS000</td><td>Handling Charge and Professional Fee(IT) SGA</td><td>IDR</td><td class="n">2.82</td><td class="n">0.00</td><td class="n">2.82</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772001001-A7744-MIS000</td><td>Light and Heat Expense SGA (Electricity)</td><td>IDR</td><td class="n">0.00</td><td class="n">0.03</td><td class="n">-0.03</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">33925.00</td><td class="n">0.00</td><td class="n">33925.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">31668.00</td><td class="n">0.00</td><td class="n">31668.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">24094.00</td><td class="n">0.00</td><td class="n">24094.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">22075.00</td><td class="n">0.00</td><td class="n">22075.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">7107.00</td><td class="n">0.00</td><td class="n">7107.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">9201.00</td><td class="n">0.00</td><td class="n">9201.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">44960.00</td><td class="n">0.00</td><td class="n">44960.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">37710.00</td><td class="n">0.00</td><td class="n">37710.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">771199000-A7744-MIS000</td><td>Subcontract Expense(Other)-G SGA</td><td>USD</td><td class="n">20513.00</td><td class="n">0.00</td><td class="n">20513.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">2.73</td><td class="n">0.00</td><td class="n">2.73</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.89</td><td class="n">-0.89</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.59</td><td class="n">-0.59</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.06</td><td class="n">-0.06</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">771501000-A7744-MIS000</td><td>Handling Charge and Professional Fee SGA</td><td>IDR</td><td class="n">2.59</td><td class="n">0.00</td><td class="n">2.59</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">771501000-A7744</td><td>Handling Charge and Professional Fee SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.11</td><td class="n">-0.11</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">770107001-A7744-MIS000</td><td>Depreciation of Fixture and Fitting SGA</td><td>USD</td><td class="n">43846.00</td><td class="n">0.00</td><td class="n">43846.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770102000-A7744-MIS000</td><td>Depreciation of Machinery SGA</td><td>USD</td><td class="n">25990.00</td><td class="n">0.00</td><td class="n">25990.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770107001-A7744-MIS000</td><td>Depreciation of Fixture and Fitting SGA</td><td>USD</td><td class="n">16821.00</td><td class="n">0.00</td><td class="n">16821.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770107001-A7744-MIS000</td><td>Depreciation of Fixture and Fitting SGA</td><td>USD</td><td class="n">1565.00</td><td class="n">0.00</td><td class="n">1565.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770107001-A7744-MIS000</td><td>Depreciation of Fixture and Fitting SGA</td><td>USD</td><td class="n">40292.00</td><td class="n">0.00</td><td class="n">40292.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770107001-A7744-MIS000</td><td>Depreciation of Fixture and Fitting SGA</td><td>USD</td><td class="n">11473.00</td><td class="n">0.00</td><td class="n">11473.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770107001-A7744-MIS000</td><td>Depreciation of Fixture and Fitting SGA</td><td>USD</td><td class="n">25565.00</td><td class="n">0.00</td><td class="n">25565.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760102000-A7744-MIS000</td><td>Bonus(Full-time) SGA</td><td>USD</td><td class="n">23640.00</td><td class="n">0.00</td><td class="n">23640.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760106000-A7744-MIS000</td><td>Cost of Retirement Benefit SGA</td><td>USD</td><td class="n">45077.00</td><td class="n">0.00</td><td class="n">45077.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760102001-A7744-MIS000</td><td>THR (Full-time) SGA</td><td>USD</td><td class="n">44905.00</td><td class="n">0.00</td><td class="n">44905.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760104000-A7744-MIS000</td><td>Benefits-Employer's portion SGA</td><td>IDR</td><td class="n">1.56</td><td class="n">0.00</td><td class="n">1.56</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760101000-A7744-MIS000</td><td>Salary(Full-time) SGA</td><td>IDR</td><td class="n">0.69</td><td class="n">0.00</td><td class="n">0.69</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760104000-A7744-MIS000</td><td>Benefits-Employer's portion SGA</td><td>IDR</td><td class="n">2.70</td><td class="n">0.00</td><td class="n">2.70</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">2.24</td><td class="n">0.00</td><td class="n">2.24</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.52</td><td class="n">0.00</td><td class="n">0.52</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">2.20</td><td class="n">0.00</td><td class="n">2.20</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">772404000-A7744</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">2.40</td><td class="n">0.00</td><td class="n">2.40</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">760104000-A7744-MIS000</td><td>Benefits-Employer's portion SGA</td><td>IDR</td><td class="n">0.06</td><td class="n">0.00</td><td class="n">0.06</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">1.87</td><td class="n">0.00</td><td class="n">1.87</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.36</td><td class="n">0.00</td><td class="n">0.36</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">2.81</td><td class="n">0.00</td><td class="n">2.81</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.74</td><td class="n">0.00</td><td class="n">0.74</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">1.73</td><td class="n">0.00</td><td class="n">1.73</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">771501000-A7744</td><td>Handling Charge and Professional Fee SGA</td><td>IDR</td><td class="n">1.81</td><td class="n">0.00</td><td class="n">1.81</td><td><span class="bB">B</span></td></tr>
+<tr><td class="m">772001002-A7744-MIS000</td><td>Utility Cost SGA (Other)</td><td>IDR</td><td class="n">1.22</td><td class="n">0.00</td><td class="n">1.22</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772001001-A7744-MIS000</td><td>Light and Heat Expense SGA (Electricity)</td><td>IDR</td><td class="n">1.40</td><td class="n">0.00</td><td class="n">1.40</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772403000-A7744-MIS000</td><td>Office Supply SGA</td><td>IDR</td><td class="n">2.06</td><td class="n">0.00</td><td class="n">2.06</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772201000-A7744-MIS000</td><td>Communication Line Expense SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770701000-A7744-MIS000</td><td>Subcontract Expense(IT)-G SGA</td><td>USD</td><td class="n">0.00</td><td class="n">13839.10</td><td class="n">-13839.10</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772201000-A7744-MIS000</td><td>Communication Line Expense SGA</td><td>IDR</td><td class="n">0.80</td><td class="n">0.00</td><td class="n">0.80</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">771502000-A7744-MIS000</td><td>Handling Charge and Professional Fee(IT) SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.02</td><td class="n">-0.02</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760102001-A7744-MIS000</td><td>THR (Full-time) SGA</td><td>USD</td><td class="n">0.00</td><td class="n">370.97</td><td class="n">-370.97</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">771199000-A7744-MIS000</td><td>Subcontract Expense(Other)-G SGA</td><td>USD</td><td class="n">0.00</td><td class="n">110.72</td><td class="n">-110.72</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772201000-A7744-MIS000</td><td>Communication Line Expense SGA</td><td>IDR</td><td class="n">1.82</td><td class="n">0.00</td><td class="n">1.82</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760104000-A7744-MIS000</td><td>Benefits-Employer's portion SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.09</td><td class="n">-0.09</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760101000-A7744-MIS000</td><td>Salary(Full-time) SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.32</td><td class="n">-0.32</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770107001-A7744-MIS000</td><td>Depreciation of Fixture and Fitting SGA</td><td>USD</td><td class="n">0.00</td><td class="n">5514.79</td><td class="n">-5514.79</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772202000-A7744-MIS000</td><td>Communication Expense(IT) SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772001001-A7744-MIS000</td><td>Light and Heat Expense SGA (Electricity)</td><td>IDR</td><td class="n">0.00</td><td class="n">0.01</td><td class="n">-0.01</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772001002-A7744-MIS000</td><td>Utility Cost SGA (Other)</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.98</td><td class="n">0.00</td><td class="n">0.98</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760103000-A7744-MIS000</td><td>Overtime Hours(Full-time) SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">770102000-A7744-MIS000</td><td>Depreciation of Machinery SGA</td><td>USD</td><td class="n">0.00</td><td class="n">99.45</td><td class="n">-99.45</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">771501000-A7744-MIS000</td><td>Handling Charge and Professional Fee SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772403000-A7744-MIS000</td><td>Office Supply SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">-0.00</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">772404000-A7744-MIS000</td><td>Welfare Expense SGA</td><td>IDR</td><td class="n">0.00</td><td class="n">0.02</td><td class="n">-0.02</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760102000-A7744-MIS000</td><td>Bonus(Full-time) SGA</td><td>USD</td><td class="n">0.00</td><td class="n">1017.75</td><td class="n">-1017.75</td><td><span class="bA">A</span></td></tr>
+<tr><td class="m">760106000-A7744-MIS000</td><td>Cost of Retirement Benefit SGA</td><td>USD</td><td class="n">0.00</td><td class="n">541.64</td><td class="n">-541.64</td><td><span class="bA">A</span></td></tr></tbody></table></div>
+
+<h2>Subtotal per COA</h2>
+<div class="scroll"><table><thead><tr><th>COA</th><th class="n">Net (USD)</th></tr></thead>
+<tbody><tr><td class="m">760101000</td><td class="n">1.30</td></tr>
+<tr><td class="m">760102000</td><td class="n">22,622.25</td></tr>
+<tr><td class="m">760102001</td><td class="n">44,534.03</td></tr>
+<tr><td class="m">760103000</td><td class="n">1.93</td></tr>
+<tr><td class="m">760104000</td><td class="n">9.03</td></tr>
+<tr><td class="m">760106000</td><td class="n">44,535.36</td></tr>
+<tr><td class="m">770102000</td><td class="n">25,890.55</td></tr>
+<tr><td class="m">770107001</td><td class="n">134,047.21</td></tr>
+<tr><td class="m">770701000</td><td class="n">196,900.90</td></tr>
+<tr><td class="m">771199000</td><td class="n">20,402.28</td></tr>
+<tr><td class="m">771501000</td><td class="n">4.29</td></tr>
+<tr><td class="m">771502000</td><td class="n">2.80</td></tr>
+<tr><td class="m">772001001</td><td class="n">3.61</td></tr>
+<tr><td class="m">772001002</td><td class="n">1.22</td></tr>
+<tr><td class="m">772201000</td><td class="n">2.62</td></tr>
+<tr><td class="m">772202000</td><td class="n">2.72</td></tr>
+<tr><td class="m">772403000</td><td class="n">2.06</td></tr>
+<tr><td class="m">772404000</td><td class="n">17.02</td></tr><tr><th>TOTAL</th><th class="n">488981.16</th></tr></tbody></table></div>
+
+<footer>
+Angka RAM adalah laporan heap masing-masing runtime (<code>tracemalloc</code> dan
+<code>process.memoryUsage</code>), bukan pembanding presisi — yang bisa dipegang adalah selisih ordenya.
+Waktu bervariasi antar-jalan; ExcelJS memang konsisten lebih cepat.
+Nilai uang dibulatkan sekali di akhir, bukan per baris.
+Dihasilkan oleh <code>build_report.py</code> dari <code>py.json</code> dan <code>js.json</code>.
+</footer>
+</main>

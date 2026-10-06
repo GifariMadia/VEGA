@@ -1,0 +1,8 @@
+{
+  "name": "Remix VEGA - IT Budget vs Actual Analytics",
+  "description": "Variance Evaluation \u0026 Graphical Analytics (VEGA) - Internal IT Budget vs Actual web application with monthly matrix, Excel upload validation, audit trail, and user management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
