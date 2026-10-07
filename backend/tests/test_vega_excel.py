@@ -106,10 +106,102 @@ def test_gl_edge_cases_small_workbooks(tmp_path, case):
         second=list(row);second[0]="04";second[2]=datetime(2026,7,5);sheet.append(second)
     path=tmp_path/(case+".xlsx"); book.save(path)
     result=parse_gl_file(path,{"999111222"})
-    if case in {"non_numeric","both_sides","mixed_periods"}:
+    if case in {"non_numeric","mixed_periods"}:
         assert not result["success"] and not result["records"]
     else:
         assert result["success"]
         assert result["period"] == 3
+        if case == "both_sides":assert result["total_amount"] == Decimal("11.50")
         if case == "negative":assert result["total_amount"] == Decimal("-12.50")
         if case == "date_crosscheck":assert result["warnings"]
+
+
+def test_outside_department_does_not_block_gl(tmp_path):
+    from datetime import datetime
+    from openpyxl import Workbook
+    book = Workbook(); sheet = book.active; sheet.title = "CORE"
+    sheet.append(["Pd.", "Srce.", "Date", "Account Number", "Account Description", "Reference", "Vendor", "Seq.", "Batch-Entry", "Curr.", "Exch. Rate", "Debits", "Credits", "Debits", "Credits", "Comment", "FP Number", "Doc. Number", "Comment2"])
+    sheet.append(["03", "AP", datetime(2026, 6, 5), "999111222-A7744-MIS000", "QA", None, None, 1, None, "USD", 1, 12.5, 0, 12.5, None, None, None, None, None])
+    sheet.append(["04", "AP", datetime(2026, 7, 5), "999111333-A7744-OTHER", "Other", None, None, 1, None, "USD", "bad rate", 0, 0, "#DIV/0!", 0, None, None, None, None])
+    path = tmp_path / "scope.xlsx"; book.save(path)
+    result = parse_gl_file(path, {"999111222"})
+    assert result["success"], result["errors"]
+    assert result["period"] == 3
+    assert result["rows_accepted"] == 1
+    assert result["rows_filtered"] == 1
+    assert str(result["total_amount"]) == "12.50"
+
+
+def test_invalid_exchange_rate_returns_validation_error(tmp_path):
+    from datetime import datetime
+    from openpyxl import Workbook
+    book = Workbook(); sheet = book.active; sheet.title = "CORE"
+    sheet.append(["Pd.", "Srce.", "Date", "Account Number", "Account Description", "Reference", "Vendor", "Seq.", "Batch-Entry", "Curr.", "Exch. Rate", "Debits", "Credits", "Debits", "Credits", "Comment", "FP Number", "Doc. Number", "Comment2"])
+    sheet.append(["03", "AP", datetime(2026, 6, 5), "999111222-A7744-MIS000", "QA", None, None, 1, None, "USD", "bad rate", 12.5, 0, 12.5, 0, None, None, None, None])
+    path = tmp_path / "rate.xlsx"; book.save(path)
+    result = parse_gl_file(path, {"999111222"})
+    assert not result["success"]
+    assert result["errors"][0]["row"] == 2
+
+
+def test_budget_future_fiscal_year(tmp_path):
+    from openpyxl import Workbook
+    from backend.python.vega_excel import FISCAL_MONTHS
+    book = Workbook(); sheet = book.active; sheet.title = "MIS (FC)"
+    sheet.cell(1, 1, "FY2027")
+    sheet.cell(5, 8, "Budget")
+    sheet.cell(6, 1, "COA No."); sheet.cell(6, 2, "DESCRIPTION"); sheet.cell(6, 7, "FY'27 Budget")
+    for index, month in enumerate(FISCAL_MONTHS):
+        year = 2027 if index < 9 else 2028
+        sheet.cell(6, 8 + index, f"{month} '{str(year)[-2:]}")
+        sheet.cell(7, 8 + index, 10)
+    sheet.cell(7, 1, "123456789"); sheet.cell(7, 2, "Hardware"); sheet.cell(7, 7, 120)
+    path = tmp_path / "budget-2027.xlsx"; book.save(path)
+    result = parse_budget_file(path)
+    assert result["success"], result["errors"]
+    assert result["fiscal_year"] == 2027
+    assert str(result["total_amount"]) == "120.00"
+
+
+def test_gl_export_format_variations_keep_net_amount_and_source_row(tmp_path):
+    from openpyxl import Workbook
+    from decimal import Decimal
+    book = Workbook(); sheet = book.active; sheet.title = " core "
+    sheet.append(["General Ledger export"])
+    sheet.append([])
+    sheet.append(["pd", "Srce.", "date", "account number", "Account Description", "Reference", "Vendor", "Seq.", "Batch-Entry", "Curr.", "Exch. Rate", "Debits", "Credits", "Debits", "Credits"])
+    sheet.append(["3.0", "AP", "05/06/2026", "999111222-A7744-MIS000", "QA", None, None, 1, None, "USD", "1", "1,250.50", "250.25", "1,250.50", "250.25"])
+    sheet.append([3, "AP", "06-Jun-2026", "999111222-A7744-MIS000", "Reversal", None, None, 1, None, "USD", 1, "(25.50)", "-", "(25.50)", "-"])
+    path = tmp_path / "export.xlsx"; book.save(path)
+    result = parse_gl_file(path, {"999111222"})
+    assert result["success"], result["errors"]
+    assert result["fiscal_year"] == 2026
+    assert result["period"] == 3
+    assert result["rows_accepted"] == 2
+    assert result["total_amount"] == Decimal("974.75")
+    assert sum(row["amount"] for row in result["records"]) == result["total_amount"]
+    assert [row["row_number"] for row in result["records"]] == [4, 5]
+
+
+def test_missing_period_on_mis_transaction_is_not_silently_discarded(tmp_path):
+    book = load_workbook(GL_FILE)
+    sheet = book["CORE"]
+    for row in sheet.iter_rows(min_row=2):
+        if str(row[3].value or "").endswith("MIS000"):
+            row_number = row[0].row
+            row[0].value = None
+            break
+    path = tmp_path / "missing-period.xlsx"; book.save(path)
+    result = parse_gl_file(path, allow_new_coas=True)
+    assert not result["success"] and not result["records"]
+    assert any(error["row"] == row_number and "Pd. kosong" in error["issue"] for error in result["errors"])
+
+
+def test_zip_disguised_as_excel_returns_readable_file_error(tmp_path):
+    from zipfile import ZipFile
+    from backend.python.vega_excel import ExcelFileError
+    path = tmp_path / "not-workbook.xlsx"
+    with ZipFile(path, "w") as archive:
+        archive.writestr("hello.txt", "This is not an Excel workbook")
+    with pytest.raises(ExcelFileError, match="workbook Excel"):
+        parse_gl_file(path)

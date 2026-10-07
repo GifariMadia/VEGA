@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Layers, 
   Search, 
@@ -16,13 +16,16 @@ import { useAuth } from '../../context/AuthContext';
 import { CoaItem, CoaCategory, ITDepartment } from '../../types';
 
 export const CoaListView: React.FC = () => {
-  const { coaList, addNewCoa } = useData();
+  const { coaList, addNewCoa, selectedFiscalYear } = useData();
   const { t, isAdmin, language } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, selectedCategory, selectedDepartment, selectedStatus, pageSize]);
 
   // Selected account for detail view modal
   const [activeDetailItem, setActiveDetailItem] = useState<CoaItem | null>(null);
@@ -38,6 +41,8 @@ export const CoaListView: React.FC = () => {
   const [formInScope, setFormInScope] = useState(true);
   const [formDescription, setFormDescription] = useState('');
   const [formInitialBudget, setFormInitialBudget] = useState('');
+  const today = new Date();
+  const [formFiscalYear, setFormFiscalYear] = useState(Number(selectedFiscalYear.slice(2, 6)) || (today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1));
   const [formError, setFormError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
@@ -56,6 +61,7 @@ export const CoaListView: React.FC = () => {
 
   const handleOpenAddModal = () => {
     resetForm();
+    setFormFiscalYear(Number(selectedFiscalYear.slice(2, 6)) || (today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1));
     setIsAddModalOpen(true);
   };
 
@@ -64,12 +70,17 @@ export const CoaListView: React.FC = () => {
     resetForm();
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     const cleanCode = formCode.trim().toUpperCase();
     const cleanName = formName.trim();
+
+    if (!/^\d{9}$/.test(cleanCode)) {
+      setFormError(language === 'ID' ? 'Kode COA harus 9 digit angka, sesuai kode akun pada file Excel.' : 'COA code must contain 9 digits matching the Excel account code.');
+      return;
+    }
 
     if (!cleanCode) {
       setFormError(language === 'ID' ? 'Nomor / Kode COA wajib diisi.' : 'COA Code is required.');
@@ -92,7 +103,10 @@ export const CoaListView: React.FC = () => {
       return;
     }
 
-    const initialBudgetNum = formInitialBudget ? parseFloat(formInitialBudget.replace(/[^0-9.]/g, '')) : undefined;
+    const initialBudgetNum = formInitialBudget.trim() ? Number(formInitialBudget) : undefined;
+    if (initialBudgetNum !== undefined && (!Number.isFinite(initialBudgetNum) || initialBudgetNum < 0)) {
+      setFormError(language === 'ID' ? 'Budget awal harus berupa angka nol atau positif.' : 'Initial Budget must be zero or positive.'); return;
+    }
 
     const newCoaItem: CoaItem = {
       code: cleanCode,
@@ -102,10 +116,11 @@ export const CoaListView: React.FC = () => {
       registerSystem: formRegisterSystem,
       status: formStatus,
       description: formDescription.trim() || (language === 'ID' ? `${cleanName} terdaftar pada Master COA TI.` : `${cleanName} registered in IT Master COA.`),
-      inScope: formInScope
+      inScope: formInScope,
+      fiscalYear: formFiscalYear,
     };
 
-    const res = addNewCoa(newCoaItem, initialBudgetNum && !isNaN(initialBudgetNum) ? initialBudgetNum : undefined);
+    const res = await addNewCoa(newCoaItem, initialBudgetNum);
 
     if (!res.success) {
       setFormError(res.message);
@@ -141,6 +156,12 @@ export const CoaListView: React.FC = () => {
       return true;
     });
   }, [coaList, searchQuery, selectedCategory, selectedDepartment, selectedStatus]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredCoa.length / pageSize));
+  const visiblePage = Math.min(currentPage, pageCount);
+  const pageStart = (visiblePage - 1) * pageSize;
+  const paginatedCoa = filteredCoa.slice(pageStart, pageStart + pageSize);
+  useEffect(() => { setCurrentPage(page => Math.min(page, pageCount)); }, [pageCount]);
 
   const getSystemBadgeColor = (sys: string) => {
     switch (sys) {
@@ -319,7 +340,7 @@ export const CoaListView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredCoa.map((item) => (
+                paginatedCoa.map((item) => (
                   <tr key={item.code} className="hover:bg-slate-50/80 transition group">
                     <td className="py-3 px-4 font-mono font-bold text-slate-900">
                       {item.code}
@@ -370,6 +391,22 @@ export const CoaListView: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600">
+          <div className="flex flex-wrap items-center gap-3">
+            <span aria-live="polite">{filteredCoa.length ? pageStart + 1 : 0}–{Math.min(pageStart + pageSize, filteredCoa.length)} / {filteredCoa.length} {language === 'ID' ? 'akun' : 'accounts'}</span>
+            <label className="flex items-center gap-2">
+              {language === 'ID' ? 'Baris per halaman' : 'Rows per page'}
+              <select value={pageSize} onChange={event => setPageSize(Number(event.target.value))} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                {[10, 25, 50].map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+          </div>
+          <nav aria-label={language === 'ID' ? 'Halaman daftar COA' : 'COA pagination'} className="flex items-center gap-3">
+            <button type="button" disabled={visiblePage === 1} onClick={() => setCurrentPage(visiblePage - 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">{language === 'ID' ? 'Sebelumnya' : 'Previous'}</button>
+            <span>{language === 'ID' ? 'Halaman' : 'Page'} {visiblePage} / {pageCount}</span>
+            <button type="button" disabled={visiblePage === pageCount} onClick={() => setCurrentPage(visiblePage + 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">{language === 'ID' ? 'Berikutnya' : 'Next'}</button>
+          </nav>
         </div>
       </div>
 
@@ -427,13 +464,15 @@ export const CoaListView: React.FC = () => {
                     id="new-coa-code-input"
                     type="text"
                     required
+                    pattern="[0-9]{9}"
+                    maxLength={9}
                     value={formCode}
                     onChange={(e) => setFormCode(e.target.value)}
-                    placeholder={language === 'ID' ? 'Contoh: IT-60105 atau 752201099' : 'e.g., IT-60105 or 752201099'}
+                    placeholder={language === 'ID' ? 'Contoh: 752201099' : 'e.g., 752201099'}
                     className="w-full px-3 py-2 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#1E5EFF]"
                   />
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {language === 'ID' ? 'Format standar: IT-XXXXX atau 9 digit ERP' : 'Standard format: IT-XXXXX or 9-digit ERP'}
+                    {language === 'ID' ? 'Gunakan kode COA 9 digit yang sama dengan file Excel.' : 'Use the same 9-digit COA code as the Excel file.'}
                   </p>
                 </div>
 
@@ -509,7 +548,7 @@ export const CoaListView: React.FC = () => {
                 {/* Initial Budget (USD) */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    {t.coaInitialBudgetLabel || 'Pagu Anggaran Awal Tahunan (USD, Opsional)'}
+                    {t.coaInitialBudgetLabel || 'Budget Anggaran Awal Tahunan (USD, Opsional)'}
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
@@ -517,7 +556,7 @@ export const CoaListView: React.FC = () => {
                       id="new-coa-budget-input"
                       type="number"
                       min="0"
-                      step="1000"
+                      step="0.01"
                       value={formInitialBudget}
                       onChange={(e) => setFormInitialBudget(e.target.value)}
                       placeholder={language === 'ID' ? 'Contoh: 120000' : 'e.g., 120000'}
@@ -527,6 +566,10 @@ export const CoaListView: React.FC = () => {
                   <p className="text-[10px] text-slate-400 mt-1">
                     {language === 'ID' ? 'Akan dialokasikan rata ke 12 bulan fiskal' : 'Will be allocated evenly across 12 fiscal months'}
                   </p>
+                  <label className="mt-2 block text-[11px] font-bold text-slate-700">
+                    {language === 'ID' ? 'Tahun fiskal Budget awal' : 'Initial Budget fiscal year'}
+                    <input type="number" min={2000} max={2200} required={formInitialBudget !== ''} value={formFiscalYear} onChange={event => setFormFiscalYear(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" />
+                  </label>
                 </div>
               </div>
 

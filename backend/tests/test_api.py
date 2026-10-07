@@ -127,7 +127,7 @@ def test_upload_budget_gl_replace_unknown_refusal_and_cancel(api):
 
     gl_file = root / "Docs" / "Source" / "GL Dummy.xlsx"
     gl_bytes = gl_file.read_bytes()
-    unknown_preview = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL"}, files={"file": ("GL Dummy.xlsx", gl_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    unknown_preview = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL", "register_new_coas": "false"}, files={"file": ("GL Dummy.xlsx", gl_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
     assert unknown_preview.json()["success"] is False
     assert {"770102000", "770107001"}.issubset({error["issue"].split()[2] for error in unknown_preview.json()["errors"] if "tidak terdaftar" in error["issue"]})
 
@@ -180,7 +180,7 @@ def test_corrupt_shifted_unknown_and_transaction_rollback(api, tmp_path):
     assert "workbook Excel yang valid" in corrupt.json()["errors"][0]["issue"]
 
     wrong_code = _make_gl_file(tmp_path / "unknown.xlsx")
-    unknown = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL"}, files={"file": ("unknown.xlsx", wrong_code.read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    unknown = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL", "register_new_coas": "false"}, files={"file": ("unknown.xlsx", wrong_code.read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
     assert unknown.json()["success"] is False
     assert "999999999" in unknown.json()["errors"][0]["issue"]
 
@@ -299,7 +299,7 @@ def test_dashboard_aggregates_active_data_and_projects_year_end(api):
     assert data["summary"]["actual"] == "120.00"
     assert data["summary"]["variance"] == "-20.00"
     assert data["accounts"][0]["status"] == "OVER_BUDGET"
-    assert data["monthly"][0] == {"period": 1, "month": "Apr", "budget": "100.00", "actual": "120.00"}
+    assert data["monthly"][0] == {"period": 1, "month": "Apr", "loaded": True, "budget": "100.00", "actual": "120.00", "variance": "-20.00", "variance_pct": "-20.00", "status": "OVER_BUDGET"}
     assert data["projection"]["year_end_actual"] == "1440.00"
 
 
@@ -714,3 +714,232 @@ def test_backup_decodes_url_credentials(tmp_path, monkeypatch):
     monkeypatch.setattr(backup.subprocess,"run",fake)
     backup.create_database_backup("postgresql://qa:p%40ss%3Aword@localhost/test",str(tmp_path))
     assert seen["PGPASSWORD"] == "p@ss:word"
+
+
+def test_gl_new_accounts_preview_save_dashboard_reconcile(api):
+    from pathlib import Path
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    root = Path(__file__).resolve().parents[2]
+    def preview(kind, filename, register=False):
+        return client.post("/api/v1/uploads/preview", headers=auth,
+            data={"kind": kind, "register_new_coas": str(register).lower()},
+            files={"file": (filename, (root / "Docs" / "Source" / filename).read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    budget = preview("BUDGET", "Budget Dummy.xlsx")
+    assert budget["success"]
+    assert len(budget["data"]["preview_rows"]) == 238
+    assert sum(Decimal(row["annual_amount"]) for row in budget["data"]["preview_rows"]).quantize(Decimal("0.01")) == Decimal(budget["data"]["total_amount"])
+    assert all(len(row["monthly"]) == 12 for row in budget["data"]["preview_rows"])
+    saved = client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": budget["data"]["preview_id"], "decision": "CONFIRM"})
+    assert saved.status_code == 200
+    gl = preview("GL", "GL Dummy.xlsx", True)
+    assert gl["success"], gl
+    assert gl["data"]["rows_accepted"] == 73
+    assert len(gl["data"]["preview_rows"]) == 73
+    assert sum(Decimal(row["amount"]) for row in gl["data"]["preview_rows"]).quantize(Decimal("0.01")) == Decimal(gl["data"]["total_amount"])
+    assert gl["data"]["total_amount"] == "488981.16"
+    assert len(gl["data"]["warnings"]) >= 2
+    with factory() as db:
+        assert db.scalar(select(Coa).where(Coa.code == "770102000")) is None
+        assert db.scalar(select(func.count()).select_from(ActualEntry)) == 0
+    saved = client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": gl["data"]["preview_id"], "decision": "CONFIRM"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["total_amount"] == gl["data"]["total_amount"]
+    dashboard = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    assert dashboard["summary"]["actual"] == gl["data"]["total_amount"]
+    assert dashboard["summary"]["budget"] == budget["data"]["total_amount"]
+    assert dashboard["monthly"][2]["actual"] == gl["data"]["total_amount"]
+    assert dashboard["monthly"][2]["loaded"] is True
+    assert dashboard["monthly"][0]["loaded"] is False
+    with factory() as db:
+        for code in ("770102000", "770107001"):
+            coa = db.scalar(select(Coa).where(Coa.code == code))
+            assert coa.is_active and coa.is_gl_derived
+    repeated = preview("GL", "GL Dummy.xlsx", True)
+    assert repeated["data"]["already_loaded"]["exists"]
+    denied = client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": repeated["data"]["preview_id"], "decision": "CONFIRM"})
+    assert denied.status_code == 409
+    assert client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]["summary"]["actual"] == gl["data"]["total_amount"]
+
+
+def test_upload_templates_and_ytd_cutoff(api):
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    viewer = _auth_headers(login("viewer", "Viewer-password-123!"))
+    for kind in ("BUDGET", "GL"):
+        template = client.get(f"/api/v1/uploads/templates/{kind}", headers=viewer)
+        assert template.status_code == 200
+        assert template.content.startswith(b"PK")
+        assert client.get(f"/api/v1/uploads/templates/{kind}").status_code == 401
+    with factory.begin() as db:
+        department = db.scalar(select(Department))
+        user = db.scalar(select(User).where(User.username == "admin"))
+        coa = Coa(code="111222333", name="Hardware", department_id=department.id, is_active=True)
+        db.add(coa); db.flush()
+        budget = UploadBatch(kind="BUDGET", filename="budget.xlsx", fy=2026, uploaded_by=user.id, rows_read=1, rows_imported=1, rows_rejected=0, total_amount=Decimal("1200"), status="ACTIVE")
+        gl = UploadBatch(kind="GL", filename="gl.xlsx", fy=2026, period=3, uploaded_by=user.id, rows_read=1, rows_imported=1, rows_rejected=0, total_amount=Decimal("125"), status="ACTIVE")
+        db.add_all([budget, gl]); db.flush()
+        for period in range(1, 13):
+            db.add(BudgetEntry(fy=2026, period=period, coa_id=coa.id, batch_id=budget.id, amount=Decimal("100")))
+        db.add(ActualEntry(fy=2026, period=3, coa_id=coa.id, batch_id=gl.id, amount=Decimal("125"), account_number="111222333-A7744-MIS000", section="MIS000", description="QA", row_no=2))
+    annual = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    ytd = client.get("/api/v1/dashboard?fiscal_year=2026&period_to=3", headers=auth).json()["data"]
+    assert annual["summary"]["budget"] == "1200.00"
+    assert ytd["summary"]["budget"] == "300.00"
+    assert ytd["summary"]["actual"] == "125.00"
+    assert ytd["summary"]["status"] == "UNDER_BUDGET"
+    assert ytd["summary"]["variance_pct"] == "58.33"
+    assert ytd["projection"]["annual_budget"] == "1200.00"
+    assert ytd["monthly"][2]["status"] == "OVER_BUDGET"
+    assert ytd["monthly"][2]["loaded"] is True
+
+
+def test_coa_automatically_registers_by_default_and_manual_survives_budget(api, tmp_path):
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    manual = client.post("/api/v1/coa", headers=auth, json={"code": "123123123", "name": "Manual account", "category": "Hardware"})
+    assert manual.status_code == 201
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    budget = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "BUDGET"}, files={"file": ("budget.xlsx", (root / "Docs/Source/Budget Dummy.xlsx").read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert budget["success"]
+    saved = client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": budget["data"]["preview_id"], "decision": "CONFIRM"})
+    assert saved.status_code == 200
+    with factory() as db:
+        assert db.scalar(select(Coa).where(Coa.code == "123123123")).is_active
+    path = _make_gl_file(tmp_path / "automatic.xlsx", account_number="999999999-A7744-MIS000")
+    preview = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL"}, files={"file": (path.name, path.read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert preview["success"], preview
+    assert preview["data"]["unknown_coas"] == [{"coa_code": "999999999", "rows": [2]}]
+    with factory() as db:
+        assert db.scalar(select(Coa).where(Coa.code == "999999999")) is None
+    saved = client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": preview["data"]["preview_id"], "decision": "CONFIRM"})
+    assert saved.status_code == 200, saved.text
+    with factory() as db:
+        coa = db.scalar(select(Coa).where(Coa.code == "999999999"))
+        assert coa.is_active and coa.is_gl_derived
+        assert db.scalar(select(func.count()).select_from(Coa).where(Coa.code == "999999999")) == 1
+    assert client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]["summary"]["actual"] == "12.50"
+
+
+def test_user_email_is_saved_updated_validated_and_returned_at_login(api):
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    payload = {"username": "email.viewer", "full_name": "Email Viewer", "role": "USER", "password": "Viewer-password-123!", "email": "viewer@example.com"}
+    created = client.post("/api/v1/users", headers=auth, json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["email"] == payload["email"]
+    uid = created.json()["data"]["id"]
+    response = client.put(f"/api/v1/users/{uid}", headers=auth, json={"email": "updated@example.com"})
+    assert response.json()["data"]["email"] == "updated@example.com"
+    assert client.put(f"/api/v1/users/{uid}", headers=auth, json={"email": "not-an-email"}).status_code == 422
+    token = login(payload["username"], payload["password"])
+    assert client.get("/api/v1/auth/me", headers=_auth_headers(token)).json()["data"]["email"] == "updated@example.com"
+    assert client.put(f"/api/v1/users/{uid}", headers=auth, json={"email": None}).json()["data"]["email"] is None
+
+
+def test_manual_budget_metadata_and_audit_monthly_comparison(api, tmp_path):
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    payload = {"code": "999999999", "name": "Manual Hardware", "category": "Hardware", "description": "Vendor and scope", "register_system": "Oracle Financials", "in_scope": True, "initial_budget": "1200.01", "fiscal_year": 2026}
+    created = client.post("/api/v1/coa", headers=auth, json=payload)
+    assert created.status_code == 201, created.text
+    item = created.json()["data"]
+    assert item["description"] == payload["description"] and item["register_system"] == payload["register_system"]
+    assert item["manual_budget_fy"] == 2026 and Decimal(item["manual_budget_amount"]) == Decimal("1200.01")
+    assert client.post("/api/v1/coa", headers=auth, json={**payload, "code": "999999998", "fiscal_year": None}).status_code == 422
+    path = _make_gl_file(tmp_path / "actual.xlsx", debit=125)
+    with path.open("rb") as file:
+        preview = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL"}, files={"file": (path.name, file, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert preview["success"], preview
+    saved = client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": preview["data"]["preview_id"], "decision": "CONFIRM"}).json()
+    annual = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    ytd = client.get("/api/v1/dashboard?fiscal_year=2026&period_to=3", headers=auth).json()["data"]
+    assert annual["summary"]["budget"] == "1200.01"
+    assert sum(Decimal(month["budget"]) for month in annual["monthly"]) == Decimal("1200.01")
+    assert annual["monthly"][-1]["budget"] == "100.01"
+    assert ytd["summary"]["budget"] == "300.00"
+    assert ytd["summary"]["status"] == "UNDER_BUDGET"
+    batch = client.get("/api/v1/uploads/batches", headers=auth).json()["data"]["items"][0]
+    comparison = batch["comparison"]
+    for key in ("budget", "actual", "variance", "variance_pct", "status"):
+        assert comparison[key] == annual["monthly"][2][key]
+    assert comparison["status"] == "OVER_BUDGET" and comparison["over_budget_accounts_count"] == 1
+    client.post(f"/api/v1/uploads/batches/{saved['data']['batch_id']}/cancel", headers=auth)
+    assert client.get("/api/v1/uploads/batches", headers=auth).json()["data"]["items"][0]["comparison"] is None
+    with factory() as db:
+        assert db.scalar(select(AuditLog).where(AuditLog.action == "MANUAL_BUDGET")) is not None
+    client.patch(f"/api/v1/coa/{item['id']}/status", headers=auth, json={"is_active": False})
+    assert client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]["summary"]["budget"] == "0.00"
+    assert client.post("/api/v1/coa", headers=auth, json={"code": "999999997", "name": "Tiny Budget", "initial_budget": "0.07", "fiscal_year": 2026}).status_code == 201
+    tiny = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    assert tiny["summary"]["budget"] == "0.07"
+    assert sum(Decimal(month["budget"]) for month in tiny["monthly"]) == Decimal("0.07")
+    assert all(Decimal(month["budget"]) >= 0 for month in tiny["monthly"])
+
+
+def test_uploaded_budget_takes_precedence_over_manual_and_wrong_file_is_atomic(api):
+    from pathlib import Path
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    assert client.post("/api/v1/coa", headers=auth, json={"code": "760101000", "name": "Manual Salary", "initial_budget": "1200", "fiscal_year": 2026}).status_code == 201
+    root = Path(__file__).resolve().parents[2]
+    blob = (root / "Docs/Source/Budget Dummy.xlsx").read_bytes()
+    rejected = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL"}, files={"file": ("wrong.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert rejected["success"] is False and rejected["data"]["preview_id"] is None
+    assert client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]["summary"]["budget"] == "1200.00"
+    preview = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "BUDGET"}, files={"file": ("budget.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert preview["success"]
+    assert client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": preview["data"]["preview_id"], "decision": "CONFIRM"}).status_code == 200
+    assert client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]["summary"]["budget"] == "-67370.88"
+
+
+def test_missing_gl_is_pending_and_projection_uses_unrounded_values(api, tmp_path):
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    client.post("/api/v1/coa", headers=auth, json={"code": "999999999", "name": "Precision", "initial_budget": "1200", "fiscal_year": 2026})
+    empty = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    assert empty["summary"]["status"] == "PENDING_GL"
+    assert empty["summary"]["utilization_pct"] is None
+    assert empty["summary"]["under_budget_count"] == 0
+    path = _make_gl_file(tmp_path / "precision.xlsx", debit=12.345678)
+    preview = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL"}, files={"file": (path.name, path.read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": preview["data"]["preview_id"], "decision": "CONFIRM"})
+    data = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    assert data["accounts"][0]["projected_year_end"] == "148.15"
+    assert data["projection"]["year_end_actual"] == "148.15"
+    assert data["accounts"][0]["projected_gap"] == "-1051.85"
+    future = client.get("/api/v1/dashboard?fiscal_year=2026&quarter=Q2", headers=auth).json()["data"]
+    assert future["summary"]["status"] == "PENDING_GL"
+    assert future["summary"]["variance_pct"] is None
+    assert future["summary"]["under_budget_count"] == 0
+    assert future["projection"]["missing_periods"] == [4, 5, 6]
+
+
+def test_gl_without_budget_is_pending_until_budget_available(api, tmp_path):
+    client, factory, login = api
+    auth = _auth_headers(login("admin", "Admin-password-123!"))
+    path = _make_gl_file(tmp_path / "gl-only.xlsx", debit=125)
+    preview = client.post("/api/v1/uploads/preview", headers=auth, data={"kind": "GL"}, files={"file": (path.name, path.read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert preview["success"]
+    client.post("/api/v1/uploads/confirm", headers=auth, json={"preview_id": preview["data"]["preview_id"], "decision": "CONFIRM"})
+    data = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    assert data["budget_available"] is False
+    assert data["summary"]["actual"] == "125.00"
+    assert data["summary"]["status"] == "PENDING_BUDGET"
+    assert data["summary"]["over_budget_count"] == 0
+    assert data["summary"]["under_budget_count"] == 0
+    assert data["summary"]["on_budget_count"] == 0
+    assert data["summary"]["variance_pct"] is None
+    assert data["accounts"][0]["status"] == "PENDING_BUDGET"
+    assert data["monthly"][2]["status"] == "PENDING_BUDGET"
+    assert data["categories"][0]["status"] == "PENDING_BUDGET"
+    comparison = client.get("/api/v1/uploads/batches", headers=auth).json()["data"]["items"][0]["comparison"]
+    assert comparison["status"] == "PENDING_BUDGET" and comparison["over_budget_accounts_count"] == 0
+    with factory.begin() as db:
+        coa = db.scalar(select(Coa).where(Coa.code == "999999999"))
+        coa.manual_budget_fy = 2026
+        coa.manual_budget_amount = Decimal("0")
+    available = client.get("/api/v1/dashboard?fiscal_year=2026", headers=auth).json()["data"]
+    assert available["budget_available"] is True
+    assert available["accounts"][0]["status"] == "OVER_BUDGET"

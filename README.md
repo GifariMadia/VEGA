@@ -73,6 +73,8 @@ The verified PostgreSQL suite can be run against a disposable database by settin
 
 Only `.xlsx` workbooks are accepted. The Budget parser reads the `MIS (FC)` sheet, locates the Budget band, validates month order and per-row annual totals. The GL parser reads `CORE`, takes the fiscal period from `Pd.`, and calculates converted debit minus converted credit. Preview does not write to the database. A loaded fiscal year/month requires an explicit replacement decision. A save or replacement is atomic; cancelling a saved batch removes its rows and does not restore an earlier version.
 
+Budget and GL uploads register new COA automatically on confirmation. Manual COA creation remains available and Budget imports do not deactivate accounts missing from the file. Preview lists these accounts as warnings and does not create them. Confirmation creates the accounts and transactions together; accounts absent from Budget carry zero budget. API callers may explicitly request strict master-COA validation by passing register_new_coas=false. Transactions explicitly outside MIS000 are filtered before validating their amounts or periods.
+
 COA is searchable and supports create, edit, and soft-deactivate through admin-only API operations, per the implementation scope agreed for this handoff. Users have read access to COA, upload history, and the overview; admin writes are checked on the server.
 
 ## Production acceptance

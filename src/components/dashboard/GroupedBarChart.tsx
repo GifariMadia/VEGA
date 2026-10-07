@@ -10,6 +10,7 @@ import {
   Info,
   X
 } from 'lucide-react';
+import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 
 interface GroupedBarChartProps {
@@ -27,6 +28,7 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
   monthlyData = []
 }) => {
   const { language } = useAuth();
+  const { kpiSummary } = useData();
   const [chartMode, setChartMode] = useState<'category' | 'monthly'>('category');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -41,6 +43,7 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
     underBudgetLegend: language === 'ID' ? 'Di Bawah Anggaran' : 'Under Budget',
     onBudgetLegend: language === 'ID' ? 'Sesuai Anggaran' : 'On Budget',
     variance: language === 'ID' ? 'Varians' : 'Variance',
+    absorption: language === 'ID' ? 'Penyerapan' : 'Absorption',
     status: language === 'ID' ? 'Status' : 'Status',
     monthClosed: language === 'ID' ? 'Tutup Buku' : 'Closed Period',
     monthPlanned: language === 'ID' ? 'Rencana' : 'Projected',
@@ -49,13 +52,13 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
 
   // Determine maximum value for Y-axis scaling
   const maxCategoryValue = Math.max(
-    ...categorySummaries.map((c) => Math.max(c.budget, c.actual)),
-    1_000_000
+    ...categorySummaries.map((c) => Math.max(Math.abs(c.budget), Math.abs(c.actual))),
+    1
   );
 
   const maxMonthlyValue = Math.max(
-    ...monthlyData.map((m) => Math.max(m.budget, m.actual)),
-    500_000
+    ...monthlyData.map((m) => Math.max(Math.abs(m.budget), Math.abs(m.actual))),
+    1
   );
 
   const currentMax = chartMode === 'category' ? maxCategoryValue : maxMonthlyValue;
@@ -65,18 +68,17 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawCeiling)));
   const yAxisCeiling = Math.ceil(rawCeiling / magnitude) * magnitude;
 
-  const yTicks = [
-    yAxisCeiling,
-    yAxisCeiling * 0.75,
-    yAxisCeiling * 0.5,
-    yAxisCeiling * 0.25,
-    0
-  ];
+  const signed = chartMode === 'category' ? categorySummaries.some(row => row.budget < 0 || row.actual < 0) : monthlyData.some(row => row.budget < 0 || row.actual < 0);
+  const axisRange = yAxisCeiling * (signed ? 2 : 1);
+  const zeroPct = signed ? 50 : 0;
+  const yTicks = signed ? [yAxisCeiling, yAxisCeiling / 2, 0, -yAxisCeiling / 2, -yAxisCeiling] : [yAxisCeiling, yAxisCeiling * 0.75, yAxisCeiling * 0.5, yAxisCeiling * 0.25, 0];
+  const barHeight = (value: number) => value === 0 ? 0 : Math.min(100, Math.max(0.2, Math.abs(value) / axisRange * 100));
+  const barStyle = (value: number, height: number) => ({ height: `${height}%`, bottom: `${value < 0 ? zeroPct - height : zeroPct}%` });
 
   // Dynamic insights for footer
   const { highestVarianceCat, bestDisciplinedCat } = useMemo(() => {
-    const sortedDesc = [...categorySummaries].sort((a, b) => b.variance - a.variance);
-    const sortedAsc = [...categorySummaries].sort((a, b) => a.variance - b.variance);
+    const sortedDesc = categorySummaries.filter(cat => cat.status === 'Over Budget').sort((a, b) => b.variance - a.variance);
+    const sortedAsc = categorySummaries.filter(cat => cat.status === 'Under Budget' || cat.status === 'On Budget').sort((a, b) => a.variance - b.variance);
     return {
       highestVarianceCat: sortedDesc[0] || null,
       bestDisciplinedCat: sortedAsc[0] || null
@@ -207,10 +209,11 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
                     const isHovered = hoveredIndex === idx;
                     const isSelected = selectedIndex === idx;
                     const isCardOpen = isHovered || isSelected;
-                    const isOverBudget = cat.variance > 0;
+                    const isOverBudget = cat.status === 'Over Budget';
+                    const neutral = cat.status === 'Allocation' || cat.status === 'Pending GL' || cat.status === 'Pending Budget';
                     
-                    const budgetHeightPct = cat.budget <= 0 ? 0 : Math.min(100, Math.max(0.5, (cat.budget / yAxisCeiling) * 100));
-                    const actualHeightPct = cat.actual <= 0 ? 0 : Math.min(100, Math.max(0.5, (cat.actual / yAxisCeiling) * 100));
+                    const budgetHeightPct = barHeight(cat.budget);
+                    const actualHeightPct = barHeight(cat.actual);
 
                     return (
                       <div 
@@ -263,22 +266,26 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
                               </div>
                               <div className="flex justify-between pt-1 border-t border-slate-800">
                                 <span className="text-slate-400">{labels.variance}:</span>
-                                <span className={`font-bold ${isOverBudget ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                <span className={`font-bold ${neutral ? 'text-slate-300' : isOverBudget ? 'text-rose-400' : 'text-emerald-400'}`}>
                                   {isOverBudget ? '+' : ''}{formatCurrencyUSD(cat.variance)} ({formatPercentage(cat.variancePct, true)})
                                 </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">{labels.absorption}:</span>
+                                <span className="font-bold">{formatPercentage(cat.absorptionRate)}</span>
                               </div>
                             </div>
 
                             <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between text-[10px]">
                               <span className="text-slate-400">{labels.status}:</span>
                               <span className={`px-2 py-0.5 rounded font-bold ${
-                                cat.status === 'Over Budget'
+                                neutral ? 'bg-slate-500/20 text-slate-300 border border-slate-500/30' : cat.status === 'Over Budget'
                                   ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' 
                                   : cat.status === 'Under Budget'
                                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                                   : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                               }`}>
-                                {cat.status === 'Over Budget' ? labels.overBudgetLegend : cat.status === 'Under Budget' ? labels.underBudgetLegend : labels.onBudgetLegend}
+                                {neutral ? (cat.status === 'Pending Budget' ? (language === 'ID' ? 'Budget belum tersedia' : 'Awaiting Budget') : cat.status === 'Allocation' ? (language === 'ID' ? 'Alokasi' : 'Allocation') : (language === 'ID' ? 'Belum ada GL' : 'Awaiting GL')) : cat.status === 'Over Budget' ? labels.overBudgetLegend : cat.status === 'Under Budget' ? labels.underBudgetLegend : labels.onBudgetLegend}
                               </span>
                             </div>
                           </div>
@@ -287,32 +294,32 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
                         {/* Pasangan Batang (Budget & Actual) Berdampingan */}
                         <div className="w-full flex items-end justify-center gap-1.5 sm:gap-2 h-full">
                           {/* Batang Budget (Abu-abu) */}
-                          <div className="w-1/2 max-w-[28px] h-full flex flex-col justify-end items-center">
+                          <div className="relative w-1/2 max-w-[28px] h-full">
                             {budgetHeightPct > 0 ? (
                               <div 
-                                className={`w-full rounded-t-md transition-all duration-300 ${
+                                className={`absolute w-full rounded-t-md transition-all duration-300 ${
                                   isCardOpen ? 'bg-slate-400' : 'bg-slate-300'
                                 }`}
-                                style={{ height: `${budgetHeightPct}%` }}
+                                style={barStyle(cat.budget, budgetHeightPct)}
                               />
                             ) : (
-                              <div className="w-full h-0.5 bg-slate-200" title={language === 'ID' ? 'Anggaran: $0' : 'Budget: $0'} />
+                              <div className="absolute w-full h-0.5 bg-slate-200" style={{ bottom: `${zeroPct}%` }} title={language === 'ID' ? 'Anggaran: $0' : 'Budget: $0'} />
                             )}
                           </div>
 
                           {/* Batang Actual (Biru / Merah) */}
-                          <div className="w-1/2 max-w-[28px] h-full flex flex-col justify-end items-center">
+                          <div className="relative w-1/2 max-w-[28px] h-full">
                             {actualHeightPct > 0 ? (
                               <div 
-                                className={`w-full rounded-t-md transition-all duration-300 shadow-xs ${
+                                className={`absolute w-full rounded-t-md transition-all duration-300 shadow-xs ${
                                   isOverBudget
                                     ? isCardOpen ? 'bg-rose-600' : 'bg-rose-500'
                                     : isCardOpen ? 'bg-blue-700' : 'bg-[#1E5EFF]'
                                 }`}
-                                style={{ height: `${actualHeightPct}%` }}
+                                style={barStyle(cat.actual, actualHeightPct)}
                               />
                             ) : (
-                              <div className="w-full h-0.5 bg-slate-200" title={language === 'ID' ? 'Realisasi: $0' : 'Actual: $0'} />
+                              <div className="absolute w-full h-0.5 bg-slate-200" style={{ bottom: `${zeroPct}%` }} title={language === 'ID' ? 'Realisasi: $0' : 'Actual: $0'} />
                             )}
                           </div>
                         </div>
@@ -374,11 +381,11 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
                     const isHovered = hoveredIndex === idx;
                     const isSelected = selectedIndex === idx;
                     const isCardOpen = isHovered || isSelected;
-                    const isOverBudget = m.actual > m.budget && m.isClosed;
+                    const isOverBudget = kpiSummary.status !== 'Pending Budget' && m.budget >= 0 && m.actual > m.budget && m.isClosed;
                     const variance = m.actual - m.budget;
                     
-                    const budgetHeightPct = m.budget <= 0 ? 0 : Math.min(100, Math.max(0.5, (m.budget / yAxisCeiling) * 100));
-                    const actualHeightPct = (!m.isClosed || m.actual <= 0) ? 0 : Math.min(100, Math.max(0.5, (m.actual / yAxisCeiling) * 100));
+                    const budgetHeightPct = barHeight(m.budget);
+                    const actualHeightPct = m.isClosed ? barHeight(m.actual) : 0;
 
                     return (
                       <div 
@@ -435,7 +442,7 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
                                   </div>
                                   <div className="flex justify-between pt-1 border-t border-slate-800">
                                     <span className="text-slate-400">{labels.variance}:</span>
-                                    <span className={`font-bold ${isOverBudget ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                    <span className={`font-bold ${kpiSummary.status === 'Pending Budget' || m.budget < 0 ? 'text-slate-300' : isOverBudget ? 'text-rose-400' : 'text-emerald-400'}`}>
                                       {isOverBudget ? '+' : ''}{formatCurrencyUSD(variance)}
                                     </span>
                                   </div>
@@ -452,21 +459,21 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
                         {/* Batang Bulanan (Budget & Actual) */}
                         <div className="w-full flex items-end justify-center gap-1 h-full">
                           {/* Budget */}
-                          <div className="w-1/2 max-w-[14px] h-full flex flex-col justify-end items-center">
+                          <div className="relative w-1/2 max-w-[14px] h-full">
                             <div 
-                              className="w-full rounded-t-xs bg-slate-300 transition-all duration-300"
-                              style={{ height: `${budgetHeightPct}%` }}
+                              className="absolute w-full rounded-t-xs bg-slate-300 transition-all duration-300"
+                              style={barStyle(m.budget, budgetHeightPct)}
                             />
                           </div>
 
                           {/* Actual */}
-                          <div className="w-1/2 max-w-[14px] h-full flex flex-col justify-end items-center">
+                          <div className="relative w-1/2 max-w-[14px] h-full">
                             {m.isClosed ? (
                               <div 
-                                className={`w-full rounded-t-xs transition-all duration-300 ${
+                                className={`absolute w-full rounded-t-xs transition-all duration-300 ${
                                   isOverBudget ? 'bg-rose-500' : 'bg-[#1E5EFF]'
                                 }`}
-                                style={{ height: `${actualHeightPct}%` }}
+                                style={barStyle(m.actual, actualHeightPct)}
                               />
                             ) : (
                               <div className="w-full h-1 bg-slate-200 rounded-full mb-0" />
@@ -525,8 +532,11 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
             <div className="flex items-center gap-1.5">
               <TrendingDown className="w-4 h-4 text-emerald-500 shrink-0" />
               <span>
-                {language === 'ID' ? 'Kategori Terhemat' : 'Top Savings'}:{' '}
-                <strong className="text-slate-900">{bestDisciplinedCat.category}</strong>
+                {language === 'ID' ? 'Serapan Terhemat' : 'Top Savings'}:{' '}
+                <strong className="text-slate-900">{bestDisciplinedCat.category}</strong>{' '}
+                <span className="text-emerald-600 font-mono font-bold">
+                  ({formatPercentage(bestDisciplinedCat.absorptionRate)})
+                </span>
               </span>
             </div>
           )}
@@ -534,7 +544,7 @@ export const GroupedBarChart: React.FC<GroupedBarChartProps> = ({
 
         <div className="text-[11px] font-mono text-slate-400">
           {language === 'ID' 
-            ? 'Pagu & Realisasi disinkronkan secara waktu nyata'
+            ? 'Budget & Realisasi disinkronkan secara waktu nyata'
             : 'Budget and Actuals synchronized in real time'}
         </div>
       </div>

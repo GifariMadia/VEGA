@@ -63,6 +63,7 @@ export function ApiUploadView({ isAdmin, onSaved }: ApiUploadViewProps) {
     const form = new FormData();
     form.append('kind', kind);
     form.append('file', file);
+    form.append('register_new_coas', 'true');
     try {
       const response = await api.request<PreviewData>('/uploads/preview', { method: 'POST', body: form });
       setPreview({ ...response.data, errors: response.errors ?? response.data.errors ?? [] });
@@ -127,6 +128,7 @@ export function ApiUploadView({ isAdmin, onSaved }: ApiUploadViewProps) {
         </label>)}
       </div>
 
+      {kind === 'GL' && <p className="rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-600">COA baru otomatis didaftarkan saat upload dikonfirmasi. Budget tetap 0 sampai tersedia pada unggahan Budget.</p>}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
         <div className="mb-3 text-xs font-bold text-slate-700">Pilih berkas sumber</div>
         <div className="group rounded-2xl border-2 border-dashed border-blue-300 bg-slate-50/70 px-4 py-8 text-center transition hover:border-[#1E5EFF] hover:bg-blue-50/40" onDragOver={(event) => event.preventDefault()} onDrop={dropFile}>

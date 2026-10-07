@@ -1,85 +1,94 @@
-﻿import React from 'react';
-import { 
+import React from 'react';
+import {
   LayoutDashboard,
-  Table2, 
-  UploadCloud, 
-  History, 
-  Layers, 
-  ChevronLeft, 
-  ChevronRight, 
-  Server,
-  Users
+  TableProperties,
+  UploadCloud,
+  History,
+  Layers,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  ShieldAlert,
+  Server
 } from 'lucide-react';
-import type { UserProfile } from '../../lib/api';
-
-type ActiveView = 'dashboard' | 'upload' | 'audit' | 'coa' | 'users' | 'matrix';
+import { ActiveView } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
-  activeView: ActiveView;
-  setActiveView: (view: ActiveView) => void;
+  activeView?: ActiveView;
+  activeTab?: ActiveView;
+  setActiveView?: (view: ActiveView) => void;
+  setActiveTab?: (view: ActiveView) => void;
   collapsed: boolean;
   setCollapsed: (collapsed: boolean) => void;
-  currentUser: UserProfile;
-  language: 'ID' | 'EN';
+  onOpenRlsModal?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeView,
+  activeTab,
   setActiveView,
+  setActiveTab,
   collapsed,
   setCollapsed,
-  currentUser,
-  language
+  onOpenRlsModal
 }) => {
-  const currentView = activeView;
-  const isAdmin = currentUser.role === 'ADMIN';
-  const labels = language === 'ID'
-    ? { dashboard: 'Dasbor', upload: 'Unggah', audit: 'Riwayat Unggahan', coa: 'Daftar COA', users: 'Manajemen User', adminOnly: 'Admin', collapse: 'Ciutkan sidebar', expand: 'Perluas sidebar' }
-    : { dashboard: 'Dashboard', upload: 'Upload', audit: 'Upload History', coa: 'COA List', users: 'User Management', adminOnly: 'Admin', collapse: 'Collapse Sidebar', expand: 'Expand Sidebar' };
+  const currentView = activeView || activeTab || 'dashboard';
+  const handleSelectView = (v: ActiveView) => {
+    if (setActiveView) setActiveView(v);
+    if (setActiveTab) setActiveTab(v);
+  };
+  const { t, isAdmin, currentUser, language } = useAuth();
 
   const navItems = [
-    { id: 'matrix' as ActiveView, label: language === 'ID' ? 'Matriks Bulanan' : 'Monthly Matrix', icon: Table2, adminOnly: false },
     {
       id: 'dashboard' as ActiveView,
-      label: labels.dashboard,
+      label: t.navDashboard,
       icon: LayoutDashboard,
       adminOnly: false,
     },
     {
+      id: 'matrix' as ActiveView,
+      label: t.navMonthlyMatrix,
+      icon: TableProperties,
+      adminOnly: false,
+    },
+    {
       id: 'upload' as ActiveView,
-      label: labels.upload,
+      label: t.navUpload,
       icon: UploadCloud,
       adminOnly: true,
-      badge: labels.adminOnly
+      badge: t.adminOnly
     },
     {
       id: 'audit' as ActiveView,
-      label: labels.audit,
+      label: t.navAuditTrail,
       icon: History,
       adminOnly: false,
     },
     {
       id: 'coa' as ActiveView,
-      label: labels.coa,
+      label: t.navCoaList,
       icon: Layers,
       adminOnly: false,
     },
     {
       id: 'users' as ActiveView,
-      label: labels.users,
+      label: t.navUserManagement,
       icon: Users,
       adminOnly: true,
+      badge: t.adminOnly
     },
   ];
 
   return (
-    <aside 
-      className={`bg-white border-r border-slate-200/80 transition-all duration-300 flex flex-col z-30 shrink-0 select-none shadow-xs ${
+    <aside
+      className={`sticky top-0 h-dvh self-start overflow-hidden bg-white border-r border-slate-200/80 transition-all duration-300 flex flex-col z-30 shrink-0 select-none shadow-xs ${
         collapsed ? 'w-20' : 'w-64'
       }`}
     >
       {/* Brand Header */}
-      <div className="h-18 px-4 flex items-center justify-between border-b border-slate-100">
+      <div className="h-18 shrink-0 px-4 flex items-center justify-between border-b border-slate-100">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="w-10 h-10 rounded-xl bg-[#1E5EFF] text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20 font-black text-xl tracking-wider">
             V
@@ -105,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           id="collapse-sidebar-btn"
           onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? labels.expand : labels.collapse}
+          title={collapsed ? t.expandSidebar : t.collapseSidebar}
           className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition shrink-0 cursor-pointer"
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -113,8 +122,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation List */}
-      <nav className="flex-1 py-4 px-3 space-y-1.5 overflow-y-auto">
-        {navItems.filter((item) => !item.adminOnly || isAdmin).map((item) => {
+      <nav className="flex-1 min-h-0 py-4 px-3 space-y-1.5 overflow-y-auto">
+        {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id;
           const isRestricted = item.adminOnly && !isAdmin;
@@ -125,7 +134,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               id={`nav-item-${item.id}`}
               onClick={() => {
                 if (!isRestricted) {
-                  setActiveView(item.id);
+                  handleSelectView(item.id);
                 }
               }}
               disabled={isRestricted}
@@ -138,12 +147,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
               }`}
             >
-              <Icon 
+              <Icon
                 className={`w-5 h-5 shrink-0 transition-transform group-hover:scale-105 ${
                   isActive ? 'text-white' : isRestricted ? 'text-slate-300' : 'text-slate-500'
-                }`} 
+                }`}
               />
-              
+
               {!collapsed && (
                 <span className="truncate flex-1 text-left">
                   {item.label}
@@ -152,10 +161,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {/* Admin badge */}
               {!collapsed && item.adminOnly && (
-                <span 
+                <span
                   className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider shrink-0 ${
-                    isActive 
-                      ? 'bg-blue-800 text-blue-100' 
+                    isActive
+                      ? 'bg-blue-800 text-blue-100'
                       : isRestricted
                       ? 'bg-slate-100 text-slate-400'
                       : 'bg-amber-50 text-amber-700 border border-amber-200/60'
@@ -176,7 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Role notice footer */}
       {!collapsed && (
-        <div className="p-3 m-3 bg-[#F5F7FA] rounded-xl border border-slate-200/70 space-y-2">
+        <div className="shrink-0 p-3 m-3 bg-[#F5F7FA] rounded-xl border border-slate-200/70 space-y-2">
           <div className="flex items-center gap-2">
             <Server className="w-3.5 h-3.5 text-[#1E5EFF]" />
             <span className="text-[11px] font-bold text-slate-700">
@@ -187,12 +196,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {language === 'ID' ? 'Anggaran TI TA 2026/2027' : 'IT Budget FY2026/2027'}
           </p>
 
+          {onOpenRlsModal && (
+            <button
+              onClick={onOpenRlsModal}
+              className="w-full py-1.5 px-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <ShieldAlert className="w-3 h-3 text-[#1E5EFF]" />
+              <span>{t.rlsSchema}</span>
+            </button>
+          )}
+
           <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px]">
             <span className="text-slate-400">
               {language === 'ID' ? 'Peran Saat Ini:' : 'Current Role:'}
             </span>
             <span className={`font-bold ${isAdmin ? 'text-blue-600' : 'text-slate-600'}`}>
-                  {currentUser.role === 'ADMIN' ? 'Administrator' : 'Viewer'}
+              {currentUser?.role || 'Guest'}
             </span>
           </div>
         </div>

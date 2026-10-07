@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -8,6 +9,7 @@ from typing_extensions import Annotated
 import re
 
 CoaCode = Annotated[str, StringConstraints(pattern=r"^\d{9}$")]
+Email = Annotated[str, StringConstraints(strip_whitespace=True, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")]
 
 def validate_password_strength(v: str) -> str:
     if v is None:
@@ -28,6 +30,7 @@ class UserPublic(BaseModel):
     id: int
     username: str
     full_name: str
+    email: str | None = None
     role: Literal["ADMIN", "USER"]
     is_active: bool
     created_at: datetime
@@ -40,6 +43,7 @@ class UserCreate(BaseModel):
     full_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     role: Literal["ADMIN", "USER"]
     password: str = Field(min_length=12, max_length=200)
+    email: Email | None = None
 
     @field_validator("password")
     @classmethod
@@ -48,6 +52,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    email: Email | None = None
     full_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None
     role: Literal["ADMIN", "USER"] | None = None
     is_active: bool | None = None
@@ -74,9 +79,17 @@ class CoaCreate(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
     category: str | None = Field(default=None, max_length=120)
     is_active: bool = True
+    description: str | None = Field(default=None, max_length=4000)
+    register_system: str = Field(default="SAP ERP", min_length=1, max_length=120)
+    in_scope: bool = True
+    initial_budget: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=2)
+    fiscal_year: int | None = Field(default=None, ge=2000, le=2200)
 
 
 class CoaUpdate(BaseModel):
+    description: str | None = Field(default=None, max_length=4000)
+    register_system: str | None = Field(default=None, min_length=1, max_length=120)
+    in_scope: bool | None = None
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)] | None = None
     category: str | None = Field(default=None, max_length=120)
 
@@ -88,3 +101,4 @@ class CoaStatus(BaseModel):
 class ConfirmUpload(BaseModel):
     preview_id: str = Field(min_length=20, max_length=100)
     decision: Literal["CONFIRM", "REPLACE", "CANCEL"]
+    replace_reason: str | None = Field(default=None, max_length=2000)

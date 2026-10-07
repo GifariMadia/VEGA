@@ -225,7 +225,7 @@ export const formatCurrencyIDR = formatCurrencyUSD;
  * Percentage Formatter
  */
 export function formatPercentage(val: number, withSign: boolean = false): string {
-  if (val === undefined || val === null || isNaN(val)) return '0.0%';
+  if (val === undefined || val === null || !Number.isFinite(val)) return 'n.a.';
   const formatted = val.toFixed(1) + '%';
   if (withSign && val > 0) {
     return '+' + formatted;

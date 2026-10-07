@@ -1,67 +1,49 @@
 import { useEffect, useState } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
-import { ApiHeader } from './components/layout/ApiHeader';
 import { ApiLoginView } from './components/auth/ApiLoginView';
-import { ApiCoaView } from './components/coa/ApiCoaView';
-import { ApiUploadView } from './components/upload/ApiUploadView';
-import { ApiHistoryView } from './components/audit/ApiHistoryView';
-import { ApiDashboardView } from './components/dashboard/ApiDashboardView';
-import { ApiMatrixView } from './components/matrix/ApiMatrixView';
-import { ApiUsersView } from './components/users/ApiUsersView';
-import { ApiError, api, type UploadBatch, type UserProfile } from './lib/api';
+import { ServerUiProvider } from './context/ServerUiProvider';
+import { useAuth } from './context/AuthContext';
+import { useData } from './context/DataContext';
+import { Header } from './components/layout/Header';
+import { DashboardView } from './components/dashboard/DashboardView';
+import { MonthlyMatrixView } from './components/matrix/MonthlyMatrixView';
+import { UploadView } from './components/upload/UploadView';
+import { AuditTrailView } from './components/audit/AuditTrailView';
+import { CoaListView } from './components/coa/CoaListView';
+import { UserManagementView } from './components/users/UserManagementView';
+import { ApiError, api, type UserProfile } from './lib/api';
 import type { Language } from './types';
 
 type Page = 'dashboard' | 'upload' | 'audit' | 'coa' | 'users' | 'matrix';
 
 function AuthenticatedApp({ user, onLogout }: { user: UserProfile; onLogout: () => void }) {
-  const [page, setPage] = useState<Page>('dashboard');
-  const [batches, setBatches] = useState<UploadBatch[]>([]);
-  const [coaCount, setCoaCount] = useState<number | null>(null);
   const [language, setLanguage] = useState<Language>(() => localStorage.getItem('vega.language') === 'EN' ? 'EN' : 'ID');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [loadError, setLoadError] = useState('');
-
-  const refreshBatches = async () => {
-    try {
-      const items: UploadBatch[] = [];
-      for (let batchPage = 1; ; batchPage++) {
-        const response = await api.request<{ items: UploadBatch[] }>(`/uploads/batches?page=${batchPage}&page_size=100`);
-        items.push(...response.data.items);
-        if (response.data.items.length < 100) break;
-      }
-      setBatches(items);
-      setLoadError('');
-    } catch (error) {
-      setLoadError(error instanceof ApiError ? error.message : 'Gagal memuat riwayat.');
-    }
-  };
-
-  useEffect(() => { void refreshBatches(); }, []);
-  useEffect(() => {
-    api.request<{ total: number }>('/coa?page_size=1').then((result) => setCoaCount(result.data.total)).catch((error) => setLoadError(error instanceof ApiError ? error.message : 'Gagal memuat jumlah COA.'));
-  }, []);
   useEffect(() => { localStorage.setItem('vega.language', language); }, [language]);
-  useEffect(() => {
-    if (user.role !== 'ADMIN' && (page === 'users' || page === 'upload')) setPage('dashboard');
-  }, [user.role, page]);
+  return <ServerUiProvider user={user} language={language} setLanguage={setLanguage} onLogout={onLogout}><LegacyAppLayout /></ServerUiProvider>;
+}
 
-  return (
-    <div className="flex min-h-screen bg-[#F5F7FA] font-sans text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
-      <Sidebar activeView={page} collapsed={sidebarCollapsed} currentUser={user} language={language} setActiveView={setPage} setCollapsed={setSidebarCollapsed} />
-      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
-        <ApiHeader activeView={page} currentUser={user} language={language} onLogout={onLogout} setLanguage={setLanguage} />
-        <main className="mx-auto min-w-0 w-full max-w-7xl flex-1 p-4 sm:p-6 lg:p-8">
-          {loadError && <p aria-live="polite" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{loadError}</p>}
-          {page === 'dashboard' && <ApiDashboardView batches={batches} isAdmin={user.role === 'ADMIN'} language={language} onNavigate={setPage} refreshKey={batches.map((batch) => `${batch.id}:${batch.status}`).join('|')} />}
-          {page === 'matrix' && <ApiMatrixView batches={batches} language={language} />}
-          {page === 'coa' && <ApiCoaView isAdmin={user.role === 'ADMIN'} />}
-          {page === 'upload' && user.role === 'ADMIN' && <ApiUploadView isAdmin onSaved={refreshBatches} />}
-          {page === 'audit' && <ApiHistoryView isAdmin={user.role === 'ADMIN'} refreshKey={batches.map((batch) => `${batch.id}:${batch.status}`).join('|')} onChanged={refreshBatches} />}
-          {page === 'users' && user.role === 'ADMIN' && <ApiUsersView currentUser={user} language={language} />}
-        </main>
-      </div>
+function LegacyAppLayout() {
+  const [page, setPage] = useState<Page>('dashboard');
+  const [collapsed, setCollapsed] = useState(false);
+  const { isAdmin } = useAuth();
+  const { isApiLoading } = useData();
+  useEffect(() => { if (!isAdmin && (page === 'upload' || page === 'users')) setPage('dashboard'); }, [isAdmin, page]);
+  return <div className="min-h-screen bg-[#F5F7FA] text-slate-800 flex font-sans antialiased selection:bg-blue-100 selection:text-blue-900">
+    <Sidebar activeView={page} setActiveView={setPage} collapsed={collapsed} setCollapsed={setCollapsed} />
+    <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+      <Header activeView={page} onOpenRlsModal={() => {}} />
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+        {isApiLoading && <p role="status" className="mb-4 text-xs text-slate-500">Memuat data unggahan...</p>}
+        {page === 'dashboard' && !isApiLoading && <DashboardView />}
+        {page === 'matrix' && !isApiLoading && <MonthlyMatrixView />}
+        {page === 'upload' && isAdmin && <UploadView onNavigateToDashboard={() => setPage('dashboard')} onNavigateToMatrix={() => setPage('matrix')} onNavigateToAudit={() => setPage('audit')} />}
+        {page === 'audit' && <AuditTrailView />}
+        {page === 'coa' && <CoaListView />}
+        {page === 'users' && isAdmin && <UserManagementView />}
+      </main>
     </div>
-  );
+
+  </div>;
 }
 
 export default function App() {

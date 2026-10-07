@@ -30,7 +30,7 @@ def create_user(payload: UserCreate, admin: AdminUser, db: DbSession):
     username = payload.username.strip()
     if db.scalar(select(User.id).where(func.lower(User.username) == username.lower())):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username sudah dipakai.")
-    user = User(username=username, full_name=payload.full_name.strip(), role=payload.role, is_active=True, password_hash=hash_password(payload.password))
+    user = User(username=username, full_name=payload.full_name.strip(), email=payload.email, role=payload.role, is_active=True, password_hash=hash_password(payload.password))
     db.add(user)
     db.flush()
     db.add(AuditLog(user_id=admin.id, action="USER_CREATE", entity="user", entity_id=user.id, detail=f"Created {user.username} with role {user.role}."))
@@ -51,6 +51,9 @@ def update_user(user_id: int, payload: UserUpdate, admin: AdminUser, db: DbSessi
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Minimal harus ada satu administrator aktif.")
 
     changes = []
+    if "email" in payload.model_fields_set and payload.email != user.email:
+        user.email = payload.email
+        changes.append("email")
     if payload.full_name is not None and payload.full_name.strip() != user.full_name:
         user.full_name = payload.full_name.strip()
         changes.append("full_name")

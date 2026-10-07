@@ -4,6 +4,7 @@ export interface UserProfile {
   id: number;
   username: string;
   full_name: string;
+  email?: string | null;
   role: UserRole;
   is_active: boolean;
   created_at: string;
@@ -18,6 +19,11 @@ export interface CoaRecord {
   source: string;
   is_active: boolean;
   is_gl_derived: boolean;
+  description?: string | null;
+  register_system?: string;
+  in_scope?: boolean;
+  manual_budget_amount?: string | null;
+  manual_budget_fy?: number | null;
   created_at: string;
 }
 
@@ -36,6 +42,7 @@ export interface UploadBatch {
   total_amount: string;
   status: 'ACTIVE' | 'REPLACED' | 'CANCELLED';
   replaced_batch_id: number | null;
+  comparison?: { budget: string; actual: string; variance: string; variance_pct: string | null; status: string; over_budget_accounts_count: number } | null;
 }
 
 export interface ApiResult<T> {

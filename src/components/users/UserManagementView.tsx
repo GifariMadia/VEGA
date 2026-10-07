@@ -29,10 +29,13 @@ export const UserManagementView: React.FC = () => {
     language
   } = useAuth();
 
+  const [actionError, setActionError] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [busy, setBusy] = useState(false);
   // Modals state
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [resettingUser, setResettingUser] = useState<UserProfile | null>(null);
-  const [tempPassword, setTempPassword] = useState('TempPass@2026');
+  const [tempPassword, setTempPassword] = useState('');
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
 
   // New user modal state
@@ -41,7 +44,7 @@ export const UserManagementView: React.FC = () => {
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('Viewer');
-  const [newDept, setNewDept] = useState('Application & Development');
+  const [newDept, setNewDept] = useState('MIS Department');
 
   // If not admin, block view
   if (!isAdmin) {
@@ -63,49 +66,35 @@ export const UserManagementView: React.FC = () => {
   }
 
   // Handle Edit User Submit
-  const handleSaveEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser) return;
-    updateUser(editingUser);
-    setEditingUser(null);
+  const run = async (action: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true); setActionError('');
+    try { await action(); } catch (reason) { setActionError(reason instanceof Error ? reason.message : 'Gagal menyimpan perubahan.'); }
+    finally { setBusy(false); }
   };
-
-  // Handle Password Reset Submit
-  const handleConfirmReset = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resettingUser) return;
-    resetUserPassword(resettingUser.id, tempPassword);
-    setResetSuccessMessage(language === 'ID'
-      ? `Kata sandi untuk ${resettingUser.username} berhasil di-reset menjadi "${tempPassword}"`
-      : `Password for ${resettingUser.username} has been reset to "${tempPassword}"`);
-    setTimeout(() => {
-      setResetSuccessMessage(null);
-      setResettingUser(null);
-    }, 2000);
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!editingUser) return;
+    await run(async () => { await updateUser(editingUser); setEditingUser(null); });
   };
-
-  // Handle Add New User
-  const handleCreateUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUsername.trim() || !newEmail.trim() || !newFullName.trim()) return;
-
-    addUser({
-      username: newUsername.trim(),
-      fullName: newFullName.trim(),
-      email: newEmail.trim(),
-      role: newRole,
-      status: 'Active',
-      department: newDept,
+  const handleConfirmReset = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!resettingUser) return;
+    await run(async () => {
+      await resetUserPassword(resettingUser.id, tempPassword);
+      setResetSuccessMessage(language === 'ID' ? 'Kata sandi berhasil diperbarui.' : 'Password updated.');
+      setTempPassword('');
     });
-
-    setNewUsername('');
-    setNewFullName('');
-    setNewEmail('');
-    setShowAddUserModal(false);
+  };
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await run(async () => {
+      await addUser({ username: newUsername.trim(), fullName: newFullName.trim(), email: newEmail.trim(), role: newRole, status: 'Active', department: 'MIS Department' }, newPassword);
+      setNewUsername(''); setNewFullName(''); setNewEmail(''); setNewPassword(''); setShowAddUserModal(false);
+    });
   };
 
   return (
     <div className="space-y-6 pb-12 max-w-6xl mx-auto">
+      {actionError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{actionError}</p>}
       {/* Header and Add User Button */}
       <div 
         id="user-mgmt-header"
@@ -117,7 +106,7 @@ export const UserManagementView: React.FC = () => {
             <span>{t.userMgmtTitle}</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            {t.userMgmtSubtitle} • {language === 'ID' ? 'Sinkronisasi Identitas Supabase' : 'Supabase Identity Synchronization'}
+            {t.userMgmtSubtitle} • {language === 'ID' ? 'Pengguna Terdaftar' : 'Registered Users'}
           </p>
         </div>
 
@@ -246,6 +235,7 @@ export const UserManagementView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              <label className="block font-bold text-slate-700">Email Korporat<input type="email" value={editingUser.email} onChange={event => setEditingUser({ ...editingUser, email: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5" /></label>
               <div>
                 <label className="block font-bold text-slate-700 mb-1">{language === 'ID' ? 'Nama Lengkap' : 'Full Name'}</label>
                 <input
@@ -286,6 +276,7 @@ export const UserManagementView: React.FC = () => {
                 <input
                   type="text"
                   value={editingUser.department}
+                  disabled
                   onChange={(e) => setEditingUser({ ...editingUser, department: e.target.value })}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#1E5EFF]"
                 />
@@ -300,7 +291,7 @@ export const UserManagementView: React.FC = () => {
                   {t.cancel}
                 </button>
                 <button
-                  type="submit"
+                  type="submit" disabled={busy}
                   className="px-5 py-2 bg-[#1E5EFF] hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition"
                 >
                   {t.saveChanges}
@@ -358,7 +349,7 @@ export const UserManagementView: React.FC = () => {
                     {t.cancel}
                   </button>
                   <button
-                    type="submit"
+                    type="submit" disabled={busy}
                     className="px-5 py-2 bg-[#1E5EFF] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition"
                   >
                     {t.confirmReset}
@@ -415,8 +406,7 @@ export const UserManagementView: React.FC = () => {
                 <label className="block font-bold text-slate-700 mb-1">{language === 'ID' ? 'Email Korporat' : 'Work Email'}</label>
                 <input
                   type="email"
-                  required
-                  placeholder="sarah.pratiwi@it-ops.vega.corp"
+                  placeholder="nama@perusahaan.com"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#1E5EFF]"
@@ -440,11 +430,16 @@ export const UserManagementView: React.FC = () => {
                 <input
                   type="text"
                   value={newDept}
+                  disabled
                   onChange={(e) => setNewDept(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#1E5EFF]"
                 />
               </div>
 
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">{language === 'ID' ? 'Kata Sandi Awal' : 'Initial Password'}</label>
+                <p className="mb-1 text-[11px] text-slate-500">{language === 'ID' ? 'Minimal 12 karakter, huruf besar, huruf kecil, angka, dan simbol.' : 'At least 12 characters with uppercase, lowercase, a number, and a symbol.'}</p><input type="password" minLength={12} required value={newPassword} onChange={event => setNewPassword(event.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1E5EFF]" />
+              </div>
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -454,7 +449,7 @@ export const UserManagementView: React.FC = () => {
                   {t.cancel}
                 </button>
                 <button
-                  type="submit"
+                  type="submit" disabled={busy}
                   className="px-5 py-2 bg-[#1E5EFF] hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition"
                 >
                   {language === 'ID' ? 'Buat Pengguna' : 'Create User'}

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import joinedload
@@ -79,6 +80,12 @@ def _find_active(db, parsed: dict[str, Any]) -> UploadBatch | None:
 
 
 def _preview_data(parsed: dict[str, Any], preview_id: str | None, existing: UploadBatch | None) -> dict[str, Any]:
+    preview_rows = parsed.get("records", [])
+    if parsed["kind"] == "BUDGET":
+        monthly: dict[str, dict[str, Any]] = {}
+        for record in preview_rows:
+            monthly.setdefault(record["coa_code"], {})[FISCAL_MONTHS[record["period"] - 1]] = record["amount"]
+        preview_rows = [{**account, "monthly": monthly.get(account["coa_code"], {})} for account in parsed.get("accounts", [])]
     data = {
         "preview_id": preview_id,
         "kind": parsed["kind"],
@@ -90,13 +97,24 @@ def _preview_data(parsed: dict[str, Any], preview_id: str | None, existing: Uplo
         "rows_accepted": parsed.get("rows_accepted", 0),
         "rows_rejected": parsed.get("rows_rejected", 0),
         "rows_filtered": parsed.get("rows_filtered", 0),
+        "filtered_rows": parsed.get("filtered_rows", []) + parsed.get("rows_skipped", []),
         "total_amount": parsed.get("total_amount", Decimal("0.00")),
         "sample_rows": parsed.get("sample_rows", []),
+        "preview_rows": preview_rows,
+        "unknown_coas": parsed.get("unknown_coas", []),
         "duplicates": parsed.get("duplicates", []),
         "warnings": parsed.get("warnings", []),
         "already_loaded": {"exists": existing is not None, "existing_batch": _batch_payload(existing) if existing else None},
     }
     return _json_safe(data)
+
+
+@router.get("/templates/{kind}")
+def download_template(kind: Literal["BUDGET", "GL"], _user: CurrentUser):
+    path = Path(__file__).resolve().parents[3] / "Docs" / "Source" / ("Budget Dummy.xlsx" if kind == "BUDGET" else "GL Dummy.xlsx")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Contoh template tidak tersedia.")
+    return FileResponse(path, filename=path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @router.post("/preview")
@@ -105,6 +123,7 @@ async def preview_upload(
     db: DbSession,
     kind: Annotated[Literal["BUDGET", "GL"], Form()],
     file: Annotated[UploadFile, File()],
+    register_new_coas: Annotated[bool, Form()] = True,
 ):
     filename = Path(file.filename or "upload.xlsx").name
     errors: list[dict[str, Any]] = []
@@ -135,7 +154,7 @@ async def preview_upload(
         else:
             known_codes = set(db.scalars(select(Coa.code).where(Coa.is_active.is_(True))).all())
             from starlette.concurrency import run_in_threadpool
-            parsed = await run_in_threadpool(parse_gl_file, path, known_codes)
+            parsed = await run_in_threadpool(parse_gl_file, path, known_codes, register_new_coas)
     except ExcelFileError as exc:
         return {"success": False, "message": "File ditolak; tidak ada data yang disimpan.", "data": {"preview_id": None}, "errors": [{"row": None, "issue": str(exc), "expected": "File harus berupa workbook Excel .xlsx yang valid."}]}
     finally:
@@ -152,7 +171,7 @@ async def preview_upload(
         expired = [key for key, value in _previews.items() if value["created_at"] + PREVIEW_TTL_SECONDS < time.monotonic()]
         for key in expired:
             _previews.pop(key, None)
-        _previews[preview_id] = {"created_at": time.monotonic(), "user_id": user.id, "filename": filename, "parsed": parsed}
+        _previews[preview_id] = {"created_at": time.monotonic(), "user_id": user.id, "filename": filename, "parsed": parsed, "register_new_coas": register_new_coas}
     return {"success": True, "message": "Preview berhasil dibuat; belum ada data yang disimpan.", "data": _preview_data(parsed, preview_id, existing), "errors": []}
 
 
@@ -211,8 +230,6 @@ def confirm_upload(payload: ConfirmUpload, user: AdminUser, db: DbSession):
             department = db.scalar(select(Department).where(Department.code == "MIS000"))
             if department is None:
                 raise HTTPException(status_code=503, detail="Master departemen MIS000 belum di-seed.")
-            for coa in db.scalars(select(Coa).where(Coa.is_gl_derived.is_(False))).all():
-                coa.is_active = False
             coa_by_code = {coa.code: coa for coa in db.scalars(select(Coa)).all()}
             records_by_code: dict[str, list[dict[str, Any]]] = {}
             for record in parsed["records"]:
@@ -232,11 +249,24 @@ def confirm_upload(payload: ConfirmUpload, user: AdminUser, db: DbSession):
                 for record in records_by_code.get(coa.code, []):
                     db.add(BudgetEntry(fy=parsed["fiscal_year"], period=record["period"], coa_id=coa.id, amount=record["amount"], batch_id=batch.id))
         else:
-            coa_by_code = {coa.code: coa for coa in db.scalars(select(Coa).where(Coa.is_active.is_(True))).all()}
+            coa_by_code = {coa.code: coa for coa in db.scalars(select(Coa)).all()}
+            department = db.scalar(select(Department).where(Department.code == "MIS000"))
+            new_codes = {item["coa_code"] for item in parsed.get("unknown_coas", [])}
             for record in parsed["records"]:
                 coa = coa_by_code.get(record["coa_code"])
-                if coa is None:
-                    raise HTTPException(status_code=409, detail=f"Kode COA {record['coa_code']} tidak lagi terdaftar; jalankan preview ulang.")
+                if coa is None or not coa.is_active:
+                    if not preview.get("register_new_coas") or record["coa_code"] not in new_codes:
+                        raise HTTPException(status_code=409, detail=f"Kode COA {record['coa_code']} tidak lagi terdaftar; jalankan preview ulang.")
+                    if department is None:
+                        raise HTTPException(status_code=503, detail="Master departemen MIS000 belum di-seed.")
+                    if coa is None:
+                        coa = Coa(code=record["coa_code"], name=record["description"] or record["coa_code"], department_id=department.id, is_active=True, is_gl_derived=True, register_system="Auto-Detected")
+                        db.add(coa)
+                        db.flush()
+                        coa_by_code[coa.code] = coa
+                    else:
+                        coa.is_active = True
+                    db.add(AuditLog(user_id=user.id, action="GL_COA_REGISTER", entity="coa", entity_id=coa.id, detail=f"COA {coa.code} registered from confirmed GL batch {batch.id}"))
                 db.add(ActualEntry(
                     fy=parsed["fiscal_year"], period=parsed["period"], coa_id=coa.id,
                     amount=record["amount"], account_number=record["account_number"], section=record["section"],
@@ -246,7 +276,10 @@ def confirm_upload(payload: ConfirmUpload, user: AdminUser, db: DbSession):
                 ))
 
         action = "REPLACE" if existing else "UPLOAD"
-        db.add(AuditLog(user_id=user.id, action=action, entity="upload_batch", entity_id=batch.id, detail=f"{parsed['kind']} {parsed['fiscal_year']} {_period_label(parsed['period'])}; {parsed['rows_accepted']} rows; total {parsed['total_amount']}"))
+        detail = f"{parsed['kind']} {parsed['fiscal_year']} {_period_label(parsed['period'])}; {parsed['rows_accepted']} rows; total {parsed['total_amount']}"
+        if existing and payload.replace_reason:
+            detail += f"; reason: {payload.replace_reason.strip()}"
+        db.add(AuditLog(user_id=user.id, action=action, entity="upload_batch", entity_id=batch.id, detail=detail))
         db.commit()
         db.refresh(batch)
     except HTTPException:
@@ -275,6 +308,18 @@ def list_batches(_user: CurrentUser, db: DbSession, kind: Literal["BUDGET", "GL"
         statement = statement.where(UploadBatch.status == status)
     batches = db.scalars(statement.order_by(UploadBatch.uploaded_at.desc(), UploadBatch.id.desc()).offset((page - 1) * page_size).limit(page_size)).unique().all()
     items = [_batch_payload(batch) for batch in batches]
+    # Evaluate actuals against the same monthly Budget used by the dashboard.
+    from backend.vega.routers.dashboard import dashboard_summary
+    summaries = {}
+    for batch, item in zip(batches, items):
+        item["comparison"] = None
+        if batch.kind != "GL" or batch.status != "ACTIVE":
+            continue
+        if batch.fy not in summaries:
+            summaries[batch.fy] = dashboard_summary(_user, db, batch.fy, None, None, None)["data"]
+        summary = summaries[batch.fy]
+        monthly = summary["monthly"][batch.period - 1]
+        item["comparison"] = {**monthly, "over_budget_accounts_count": sum(account["monthly"][batch.period - 1]["status"] == "OVER_BUDGET" for account in summary["accounts"])}
     return {"success": True, "message": "Success", "data": {"items": items, "page": page, "page_size": page_size}}
 
 

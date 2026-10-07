@@ -23,7 +23,7 @@ class ExcelFileError(ValueError):
 def _load_workbook(path: str | Path):
     try:
         return load_workbook(path, read_only=True, data_only=True)
-    except (BadZipFile, InvalidFileException, OSError, ValueError) as exc:
+    except (BadZipFile, InvalidFileException, OSError, ValueError, KeyError) as exc:
         raise ExcelFileError("File tidak dapat dibuka sebagai workbook Excel yang valid.") from exc
 
 
@@ -35,7 +35,15 @@ def _decimal(value: Any, *, allow_blank: bool = False) -> Decimal:
     if isinstance(value, bool):
         raise InvalidOperation
     try:
-        amount = Decimal(str(value).strip())
+        text = str(value).strip()
+        if isinstance(value, str):
+            if text == "-":
+                text = "0"
+            if re.fullmatch(r"\(?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?", text):
+                text = text.replace(",", "")
+            if re.fullmatch(r"\(\d+(?:\.\d+)?\)", text):
+                text = "-" + text[1:-1]
+        amount = Decimal(text)
     except (InvalidOperation, ValueError):
         raise InvalidOperation from None
     if not amount.is_finite():
@@ -96,9 +104,9 @@ def parse_budget_file(path: str | Path) -> dict[str, Any]:
         return _refusal("BUDGET", "Header bulan pada blok Budget tidak sesuai atau bergeser.", "Baris 6 harus berurutan Apr sampai Mar tepat di bawah band Budget.")
 
     anchor_headers = [str(header[index] or "").strip().casefold() if index < len(header) else "" for index in (0, 1, 6)]
-    if anchor_headers != ["coa no.", "description", "fy'26 budget"]:
+    if anchor_headers[:2] != ["coa no.", "description"] or not re.fullmatch(r"fy['\u2019]?\s*\d{2,4}\s+budget", anchor_headers[2]):
         workbook.close()
-        return _refusal("BUDGET", "Header kolom COA, DESCRIPTION, atau FY'26 Budget tidak sesuai.", "Header harus berada pada kolom A, B, dan G.")
+        return _refusal("BUDGET", "Header kolom COA, DESCRIPTION, atau FY Budget tidak sesuai.", "Header harus berada pada kolom A, B, dan G.")
 
     fiscal_year = _year_from_title(sheet.cell(1, 1).value)
     if fiscal_year is None:
@@ -217,25 +225,35 @@ def _date_value(value: Any) -> date | None:
         try:
             return datetime.fromisoformat(value.strip()).date()
         except ValueError:
-            return None
+            for pattern in ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%b-%Y", "%d %b %Y", "%Y/%m/%d"):
+                try:
+                    return datetime.strptime(value.strip(), pattern).date()
+                except ValueError:
+                    continue
     return None
 
 
-def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None) -> dict[str, Any]:
+def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None, allow_new_coas: bool = False) -> dict[str, Any]:
     workbook = _load_workbook(path)
-    if "CORE" not in workbook.sheetnames:
+    sheet_name = next((name for name in workbook.sheetnames if name.strip().casefold() == "core"), None)
+    if sheet_name is None:
         workbook.close()
         return _refusal("GL", "Sheet CORE tidak ditemukan.", "Gunakan sheet CORE sesuai template.")
-    sheet = workbook["CORE"]
-    header = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    sheet = workbook[sheet_name]
+    header_row = 1
+    header = ()
+    for number, candidate in enumerate(sheet.iter_rows(min_row=1, max_row=25, values_only=True), start=1):
+        if len(candidate) > 3 and str(candidate[0] or "").strip().casefold() in {"pd.", "pd"} and str(candidate[3] or "").strip().casefold() == "account number":
+            header_row, header = number, candidate
+            break
     expected_amount_headers = ["debits", "credits", "debits", "credits"]
     actual_amount_headers = [str(header[index] or "").strip().casefold() if index < len(header) else "" for index in range(11, 15)]
     if actual_amount_headers != expected_amount_headers:
         workbook.close()
         return _refusal("GL", "Header kolom L-O tidak sesuai atau bergeser.", "Kolom L-O harus Debits, Credits, Debits, Credits.")
-    if len(header) < 19 or str(header[0] or "").strip() != "Pd." or str(header[2] or "").strip() != "Date" or str(header[3] or "").strip() != "Account Number":
+    if len(header) < 15 or str(header[2] or "").strip().casefold() != "date":
         workbook.close()
-        return _refusal("GL", "Header CORE tidak sesuai kontrak.", "Kolom A harus Pd., C Date, D Account Number; gunakan 19 kolom CORE.")
+        return _refusal("GL", "Header CORE tidak sesuai kontrak.", "Kolom A harus Pd., C Date, D Account Number; kolom nilai harus lengkap sampai O.")
 
     rows_read = 0
     records: list[dict[str, Any]] = []
@@ -245,8 +263,10 @@ def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None) -> 
     periods: set[int] = set()
     fiscal_years: set[int] = set()
     unknown: dict[str, list[int]] = {}
+    rows_filtered = 0
+    filtered_rows: list[dict[str, Any]] = []
 
-    for row_number, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
         if not row or not any(value is not None and str(value).strip() for value in row):
             continue
         rows_read += 1
@@ -254,13 +274,26 @@ def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None) -> 
         if not account_number:
             skipped.append({"row": row_number, "issue": "Baris dilewati: Account Number kosong."})
             continue
+        account_parts = account_number.split("-")
+        code = account_parts[0].strip()
+        in_scope = len(account_parts) == 3 and account_parts[2].strip().upper() == "MIS000"
+        section_missing = len(account_parts) == 2 and known_coa_codes is not None and code in known_coa_codes
+        if not in_scope and not section_missing:
+            if len(account_parts) == 2:
+                warnings.append({"row": row_number, "issue": f"{account_number}: section kosong dan COA belum dikenal. Baris ini tidak diimpor; unggah Budget terlebih dahulu lalu preview ulang GL agar cakupan MIS dapat diverifikasi tanpa daftar COA manual."})
+            rows_filtered += 1
+            filtered_rows.append({"row": row_number, "issue": "Account Number di luar cakupan MIS000 atau bagian tidak dapat diverifikasi.", "snippet": account_number})
+            continue
         raw_period = row[0] if row else None
         if raw_period is None or not str(raw_period).strip():
-            skipped.append({"row": row_number, "issue": "Baris dilewati: Pd. kosong."})
+            errors.append({"row": row_number, "issue": "Transaksi dalam cakupan MIS memiliki Pd. kosong.", "expected": "Isi periode fiskal 01 sampai 12 sebelum mengunggah ulang."})
             continue
         try:
-            period = int(str(raw_period).strip())
-        except ValueError:
+            numeric_period = _decimal(raw_period)
+            if numeric_period != numeric_period.to_integral_value():
+                raise InvalidOperation
+            period = int(numeric_period)
+        except (ValueError, InvalidOperation):
             errors.append({"row": row_number, "issue": f"Periode tidak valid: {raw_period!s}.", "expected": "Pd. berupa angka 01 sampai 12."})
             continue
         if period < 1 or period > 12:
@@ -268,25 +301,17 @@ def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None) -> 
             continue
 
         try:
+            if all(i >= len(row) or row[i] is None or (isinstance(row[i], str) and not row[i].strip()) for i in (13, 14)):
+                raise InvalidOperation
+            exchange_rate = _decimal(row[10], allow_blank=True) if len(row) > 10 else Decimal("0")
             native_debit = _decimal(row[11] if len(row) > 11 else None, allow_blank=True)
             native_credit = _decimal(row[12] if len(row) > 12 else None, allow_blank=True)
-            converted_debit = _decimal(row[13] if len(row) > 13 else None)
-            converted_credit = _decimal(row[14] if len(row) > 14 else None)
+            converted_debit = _decimal(row[13] if len(row) > 13 else None, allow_blank=True)
+            converted_credit = _decimal(row[14] if len(row) > 14 else None, allow_blank=True)
         except InvalidOperation:
-            errors.append({"row": row_number, "issue": "Nilai debit/kredit bukan angka.", "expected": "Kolom L-O berisi angka; perbaiki nilai error Excel seperti #DIV/0!."})
+            errors.append({"row": row_number, "issue": "Nilai debit/kredit atau kurs bukan angka.", "expected": "Kolom K-O berisi angka; isi minimal satu sisi nilai konversi dan perbaiki error Excel seperti #DIV/0!."})
             continue
-        if converted_debit != 0 and converted_credit != 0:
-            errors.append({"row": row_number, "issue": "Debit dan kredit USD sama-sama terisi pada satu baris.", "expected": "Hanya satu sisi debit atau kredit yang bernilai non-zero."})
-            continue
-
         periods.add(period)
-        account_parts = account_number.split("-")
-        code = account_parts[0].strip()
-        in_scope = len(account_parts) == 3 and account_parts[2].strip().upper() == "MIS000"
-        section_missing = len(account_parts) == 2 and known_coa_codes is not None and code in known_coa_codes
-        if not in_scope and not section_missing:
-            continue
-
         txn_date = _date_value(row[2] if len(row) > 2 else None)
         if txn_date is None:
             warnings.append({"row": row_number, "issue": "Tanggal transaksi kosong atau tidak dikenali; fiscal year tidak dapat diverifikasi dari baris ini."})
@@ -314,7 +339,7 @@ def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None) -> 
             "txn_date": txn_date,
             "amount": converted_debit - converted_credit,
             "currency": str(row[9] or "").strip().upper() if len(row) > 9 else "",
-            "exchange_rate": _decimal(row[10], allow_blank=True) if len(row) > 10 else Decimal("0"),
+            "exchange_rate": exchange_rate,
             "debit_native": native_debit,
             "credit_native": native_credit,
             "reference": str(row[5] or "").strip() if len(row) > 5 else None,
@@ -330,7 +355,10 @@ def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None) -> 
     if records and not fiscal_years:
         errors.append({"row": None, "issue": "Fiscal year tidak dapat dideteksi dari tanggal transaksi.", "expected": "Tanggal transaksi yang valid diperlukan untuk menentukan tahun awal fiscal year."})
     for code, row_numbers in sorted(unknown.items()):
-        errors.append({"row": row_numbers[0], "issue": f"Kode COA {code} tidak terdaftar.", "expected": "Daftarkan COA terlebih dahulu sebelum upload GL."})
+        if allow_new_coas:
+            warnings.append({"row": row_numbers[0], "issue": f"COA baru {code} akan dibuat dari GL saat konfirmasi; budget akun ini tetap 0 sampai Budget diunggah."})
+        else:
+            errors.append({"row": row_numbers[0], "issue": f"Kode COA {code} tidak terdaftar.", "expected": "Daftarkan COA terlebih dahulu atau aktifkan pendaftaran COA dari GL."})
     if not records and not errors:
         errors.append({"row": None, "issue": "Tidak ada baris GL untuk MIS000 yang dapat dimuat.", "expected": "Minimal satu transaksi in-scope pada sheet CORE."})
 
@@ -343,12 +371,13 @@ def parse_gl_file(path: str | Path, known_coa_codes: set[str] | None = None) -> 
         "kind": "GL",
         "fiscal_year": fiscal_year,
         "period": period,
-        "sheet_read": "CORE",
+        "sheet_read": sheet_name,
         "rows_read": rows_read,
         "rows_accepted": accepted,
         "rows_rejected": len(errors),
         "rows_skipped": skipped,
-        "rows_filtered": rows_read - len(skipped) - len(records) - len(errors),
+        "rows_filtered": rows_filtered,
+        "filtered_rows": filtered_rows,
         "total_amount": total,
         "records": records if not errors else [],
         "unknown_coas": [{"coa_code": code, "rows": row_numbers} for code, row_numbers in sorted(unknown.items())],

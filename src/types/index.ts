@@ -31,6 +31,7 @@ export type CoaCategory =
 export type ITDepartment = 'MIS Department' | string;
 
 export interface CoaItem {
+  fiscalYear?: number;
   code: string; // e.g., '752201001' or 'IT-60101'
   accountName: string;
   category: CoaCategory;
@@ -110,7 +111,7 @@ export interface UploadBatch {
   fileSize: string;
   uploadedAt: string;
   uploadedBy: string;
-  status: 'Active' | 'Replaced';
+  status: 'Active' | 'Replaced' | 'Cancelled';
   replacedAt?: string;
   replacedBy?: string;
   replaceReason?: string;
@@ -148,7 +149,7 @@ export interface AuditNote {
   content: string;
 }
 
-export type BudgetStatus = 'Over Budget' | 'On Budget' | 'Under Budget' | 'On Track';
+export type BudgetStatus = 'Over Budget' | 'On Budget' | 'Under Budget' | 'On Track' | 'Allocation' | 'Pending GL' | 'Pending Budget';
 
 export interface BudgetHealthBreakdown {
   totalAccounts: number;

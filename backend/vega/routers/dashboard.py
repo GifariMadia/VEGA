@@ -45,14 +45,14 @@ def _money(value: Decimal) -> str:
     return format(_round(value), "f")
 
 
-def _line(budget: Decimal, actual: Decimal) -> dict[str, str | None]:
+def _line(budget: Decimal, actual: Decimal, evaluated: bool = True, budget_available: bool = True) -> dict[str, str | None]:
     variance = budget - actual
     return {
         "budget": _money(budget),
         "actual": _money(actual),
         "variance": _money(variance),
-        "variance_pct": _pct(variance, budget),
-        "status": _status(budget, actual),
+        "variance_pct": _pct(variance, budget) if evaluated and budget_available else None,
+        "status": "PENDING_BUDGET" if not budget_available else _status(budget, actual) if evaluated else "PENDING_GL",
     }
 
 
@@ -63,6 +63,7 @@ def dashboard_summary(
     fiscal_year: Annotated[int, Query(ge=2000, le=2200)],
     quarter: Annotated[str | None, Query(pattern=r"^Q[1-4]$")] = None,
     category: Annotated[str | None, Query(max_length=120)] = None,
+    period_to: Annotated[int | None, Query(ge=1, le=12)] = None,
 ):
     budget_rows = db.execute(
         select(BudgetEntry.coa_id, BudgetEntry.period, func.sum(BudgetEntry.amount))
@@ -83,7 +84,7 @@ def dashboard_summary(
     )
     months_loaded = len(loaded_periods)
 
-    all_coas = db.execute(select(Coa.id, Coa.code, Coa.name, Coa.category, Coa.is_active, Coa.is_gl_derived)).all()
+    all_coas = db.execute(select(Coa.id, Coa.code, Coa.name, Coa.category, Coa.is_active, Coa.is_gl_derived, Coa.manual_budget_amount, Coa.manual_budget_fy, Coa.in_scope)).all()
     available_categories = sorted({coa.category or "Uncategorized" for coa in all_coas})
     coa_by_id = {coa.id: coa for coa in all_coas if not category or (coa.category or "Uncategorized") == category}
 
@@ -95,8 +96,19 @@ def dashboard_summary(
     for coa_id, period, amount in actual_rows:
         if coa_id in coa_by_id:
             actual[(coa_id, period)] += Decimal(amount or 0)
+    file_budget_coas = {row[0] for row in budget_rows}
+    for coa_id, coa in coa_by_id.items():
+        if coa.manual_budget_fy == fiscal_year and coa.manual_budget_amount is not None and coa.is_active and coa.in_scope and coa_id not in file_budget_coas:
+            annual = Decimal(coa.manual_budget_amount)
+            monthly_cents, remainder = divmod(int(annual * 100), 12)
+            for period in range(1, 13):
+                budget[(coa_id, period)] += Decimal(monthly_cents + (period > 12 - remainder)) / 100
 
+    budget_available = bool(db.scalar(select(UploadBatch.id).where(UploadBatch.kind == "BUDGET", UploadBatch.fy == fiscal_year, UploadBatch.status == "ACTIVE").limit(1))) or any(coa.manual_budget_fy == fiscal_year and coa.manual_budget_amount is not None and coa.is_active and coa.in_scope for coa in all_coas)
     selected = set(QUARTERS[quarter]) if quarter else set(range(1, 13))
+    if period_to is not None:
+        selected &= set(range(1, period_to + 1))
+    evaluated = bool(selected.intersection(loaded_periods))
     month_budget = [ZERO] * 12
     month_actual = [ZERO] * 12
     for (_coa, period), value in budget.items():
@@ -119,12 +131,14 @@ def dashboard_summary(
             "is_active": coa.is_active,
             "is_gl_derived": coa.is_gl_derived,
             "has_data": any(_round(budget[(coa_id, p)]) != 0 or _round(actual[(coa_id, p)]) != 0 for p in selected),
+            "projected_year_end": _money(sum((actual[(coa_id, p)] for p in loaded_periods), ZERO) * 12 / months_loaded) if months_loaded else None,
+            "projected_gap": _money(sum((actual[(coa_id, p)] for p in loaded_periods), ZERO) * 12 / months_loaded - sum((budget[(coa_id, p)] for p in range(1, 13)), ZERO)) if months_loaded else None,
             "monthly": [
                 {"period": p, "month": FISCAL_MONTHS[p - 1], "loaded": p in loaded_periods,
-                 **_line(budget[(coa_id, p)], actual[(coa_id, p)])}
+                 **_line(budget[(coa_id, p)], actual[(coa_id, p)], p in loaded_periods, budget_available)}
                 for p in range(1, 13)
             ],
-            **_line(account_budget, account_actual),
+            **_line(account_budget, account_actual, evaluated, budget_available),
         })
     account_rows.sort(key=lambda row: abs(Decimal(row["variance"])), reverse=True)
 
@@ -136,7 +150,7 @@ def dashboard_summary(
     for name, periods in QUARTERS.items():
         q_budget = sum((month_budget[p - 1] for p in periods), ZERO)
         q_actual = sum((month_actual[p - 1] for p in periods), ZERO)
-        quarter_rows.append({"quarter": name, "months": [FISCAL_MONTHS[p - 1] for p in periods], "loaded": all(p in loaded_periods for p in periods), **_line(q_budget, q_actual)})
+        quarter_rows.append({"quarter": name, "months": [FISCAL_MONTHS[p - 1] for p in periods], "loaded": all(p in loaded_periods for p in periods), **_line(q_budget, q_actual, bool(set(periods).intersection(loaded_periods)), budget_available)})
 
     ytd_actual = sum((month_actual[p - 1] for p in loaded_periods), ZERO)
     annual_budget = sum(month_budget, ZERO)
@@ -152,11 +166,10 @@ def dashboard_summary(
             "quarter": quarter,
             "category": category,
             "available_categories": available_categories,
+            "budget_available": budget_available,
             "summary": {
-                "budget": _money(total_budget),
-                "actual": _money(total_actual),
-                "variance": _money(total_budget - total_actual),
-                "utilization_pct": format(_round(total_actual / total_budget * 100), "f") if _round(total_budget) > 0 else None,
+                **_line(total_budget, total_actual, evaluated, budget_available),
+                "utilization_pct": format(_round(total_actual / total_budget * 100), "f") if evaluated and budget_available and _round(total_budget) > 0 else None,
                 "over_budget_count": statuses.count("OVER_BUDGET"),
                 "under_budget_count": statuses.count("UNDER_BUDGET"),
                 "on_budget_count": statuses.count("ON_BUDGET"),
@@ -164,6 +177,8 @@ def dashboard_summary(
             },
             "projection": {
                 "months_loaded": months_loaded,
+                "missing_periods": sorted(selected.difference(loaded_periods)),
+                "year_end_gap": _money(projection - annual_budget) if projection is not None and budget_available else None,
                 "loaded_periods": loaded_periods,
                 "actual_through_period": loaded_periods[-1] if loaded_periods else 0,
                 "actual_to_date": _money(ytd_actual),
@@ -174,11 +189,11 @@ def dashboard_summary(
                 "allowed_monthly_spend": _money(remaining_budget / months_remaining) if months_remaining > 0 else None,
             },
             "monthly": [
-                {"period": p, "month": FISCAL_MONTHS[p - 1], "budget": _money(month_budget[p - 1]), "actual": _money(month_actual[p - 1])}
+                {"period": p, "month": FISCAL_MONTHS[p - 1], "loaded": p in loaded_periods, **_line(month_budget[p - 1], month_actual[p - 1], p in loaded_periods, budget_available)}
                 for p in range(1, 13)
             ],
             "quarters": quarter_rows,
-            "categories": [{"category": name, **_line(v[0], v[1])} for name, v in sorted(category_totals.items())],
+            "categories": [{"category": name, **_line(v[0], v[1], evaluated, budget_available)} for name, v in sorted(category_totals.items())],
             "accounts": account_rows,
         },
         "errors": [],

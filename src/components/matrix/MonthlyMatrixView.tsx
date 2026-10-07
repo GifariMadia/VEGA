@@ -22,6 +22,7 @@ export const MonthlyMatrixView: React.FC = () => {
     selectedFiscalYear, 
     selectedCategory, 
     setSelectedCategory,
+    loadedMonths = [], availableCategories = [],
     latestClosedMonth
   } = useData();
 
@@ -217,7 +218,7 @@ export const MonthlyMatrixView: React.FC = () => {
             <span>•</span>
             <span>
               {language === 'ID' ? 'Realisasi tutup buku hingga:' : 'Closed actuals through:'}{' '}
-              <strong className="text-slate-800">{latestClosedMonth} 2026</strong>
+              <strong className="text-slate-800">{loadedMonths.length ? `${latestClosedMonth} ${Number(selectedFiscalYear.slice(2, 6)) + (['Jan', 'Feb', 'Mar'].includes(latestClosedMonth) ? 1 : 0)}` : '-'}</strong>
             </span>
           </div>
           <span className="text-[11px] text-slate-400 italic">

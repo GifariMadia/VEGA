@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  History, 
-  FileSpreadsheet, 
-  AlertOctagon, 
-  ChevronDown, 
+import {
+  History,
+  FileSpreadsheet,
+  AlertOctagon,
+  ChevronDown,
   ChevronUp,
   AlertTriangle,
   CheckCircle2,
@@ -14,16 +14,17 @@ import {
   DollarSign,
   Layers
 } from 'lucide-react';
+import { DashboardKpiCards } from '../dashboard/DashboardKpiCards';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrencyUSD } from '../../lib/calculations';
 import { BudgetStatus, UploadType } from '../../types';
 
 export const AuditTrailView: React.FC = () => {
-  const { uploads } = useData();
+  const { uploads, selectedFiscalYear, selectedQuarter, selectedCategory } = useData();
   const { t, language } = useAuth();
 
-  const [expandedBatchId, setExpandedBatchId] = useState<string | null>('batch-gl-2026-08-v2');
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Over' | 'Under' | 'On' | 'Replaced'>('All');
   const [typeFilter, setTypeFilter] = useState<'All' | UploadType>('All');
@@ -55,73 +56,54 @@ export const AuditTrailView: React.FC = () => {
     });
   }, [uploads, searchQuery, statusFilter, typeFilter]);
 
-  // Aggregate statistics for KPI Summary
-  const stats = useMemo(() => {
-    const totalBatches = uploads.length;
-    const overBudgetBatches = uploads.filter(u => u.isOverBudget || u.budgetStatus === 'Over Budget');
-    const underBudgetBatches = uploads.filter(u => u.budgetStatus === 'Under Budget');
-    const onBudgetBatches = uploads.filter(u => u.budgetStatus === 'On Budget');
-    const replacedBatches = uploads.filter(u => u.status === 'Replaced');
-
-    const totalOverAmount = overBudgetBatches.reduce((acc, u) => acc + (u.overBudgetAmount || 0), 0);
-    const totalIngestedVolume = uploads.reduce((acc, u) => acc + u.totalAmount, 0);
-
-    return {
-      totalBatches,
-      overBudgetCount: overBudgetBatches.length,
-      underBudgetCount: underBudgetBatches.length,
-      onBudgetCount: onBudgetBatches.length,
-      replacedCount: replacedBatches.length,
-      totalOverAmount,
-      totalIngestedVolume
-    };
-  }, [uploads]);
-
   const getBudgetStatusBadge = (batch: typeof uploads[0]) => {
+    if (!batch.budgetStatus) return <span className="inline-flex rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600">{batch.status === 'Cancelled' ? (language === 'ID' ? 'Dibatalkan' : 'Cancelled') : (language === 'ID' ? 'Data tersimpan' : 'Stored data')}</span>;
+    if (batch.budgetStatus === 'Pending Budget' || batch.budgetStatus === 'Pending GL') return <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600">{batch.budgetStatus === 'Pending Budget' ? (language === 'ID' ? 'Budget belum tersedia' : 'Awaiting Budget') : (language === 'ID' ? 'Belum ada GL' : 'Awaiting GL')}</span>;
+    if (batch.budgetStatus === 'Allocation') return <span className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">{language === 'ID' ? 'Alokasi (Budget negatif)' : 'Allocation (negative Budget)'}</span>;
     const isOver = batch.isOverBudget || batch.budgetStatus === 'Over Budget';
     const isUnder = batch.budgetStatus === 'Under Budget';
 
     if (isOver) {
       const overAmt = batch.overBudgetAmount || Math.max(0, (batch.varianceAmount || 0));
-      const overPct = batch.overBudgetPercentage || 0;
+      const overPct = batch.overBudgetPercentage;
       return (
-        <span 
+        <span
           id={`budget-badge-over-${batch.id}`}
           className="inline-flex items-center gap-1.5 text-[11px] font-extrabold px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs"
-          title={language === 'ID' 
-            ? `Batch ini berstatus LEBIH ANGGARAN sebesar +${formatCurrencyUSD(overAmt)} (+${overPct.toFixed(2)}%)` 
-            : `This batch is OVER BUDGET by +${formatCurrencyUSD(overAmt)} (+${overPct.toFixed(2)}%)`}
+          title={language === 'ID'
+            ? `Batch ini berstatus LEBIH ANGGARAN sebesar +${formatCurrencyUSD(overAmt)} (${overPct === undefined ? 'n.a.' : '+' + overPct.toFixed(2) + '%'})`
+            : `This batch is OVER BUDGET by +${formatCurrencyUSD(overAmt)} (${overPct === undefined ? 'n.a.' : '+' + overPct.toFixed(2) + '%'})`}
         >
           <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 animate-pulse" />
-          <span>{language === 'ID' ? 'Lebih Anggaran:' : 'Over Budget:'} +{formatCurrencyUSD(overAmt, true)} (+{overPct.toFixed(1)}%)</span>
+          <span>{language === 'ID' ? 'Lebih Anggaran:' : 'Over Budget:'} +{formatCurrencyUSD(overAmt, true)} ({overPct === undefined ? 'n.a.' : '+' + overPct.toFixed(1) + '%'})</span>
         </span>
       );
     }
 
     if (isUnder) {
       const diffAmt = Math.abs(batch.varianceAmount || 0);
-      const diffPct = Math.abs(batch.overBudgetPercentage || 0);
+      const diffPct = batch.overBudgetPercentage === undefined ? undefined : Math.abs(batch.overBudgetPercentage);
       return (
-        <span 
+        <span
           id={`budget-badge-under-${batch.id}`}
           className="inline-flex items-center gap-1.5 text-[11px] font-extrabold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200"
-          title={language === 'ID' 
-            ? `Batch ini berstatus DI BAWAH ANGGARAN (hemat ${formatCurrencyUSD(diffAmt)})` 
+          title={language === 'ID'
+            ? `Batch ini berstatus DI BAWAH ANGGARAN (hemat ${formatCurrencyUSD(diffAmt)})`
             : `This batch is UNDER BUDGET (saving of ${formatCurrencyUSD(diffAmt)})`}
         >
           <TrendingDown className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span>{language === 'ID' ? 'Hemat Anggaran:' : 'Under Budget:'} -{formatCurrencyUSD(diffAmt, true)} (-{diffPct.toFixed(1)}%)</span>
+          <span>{language === 'ID' ? 'Hemat Anggaran:' : 'Under Budget:'} -{formatCurrencyUSD(diffAmt, true)} ({diffPct === undefined ? 'n.a.' : '-' + diffPct.toFixed(1) + '%'})</span>
         </span>
       );
     }
 
     return (
-      <span 
+      <span
         id={`budget-badge-on-${batch.id}`}
         className="inline-flex items-center gap-1.5 text-[11px] font-extrabold px-2.5 py-1 rounded-lg bg-blue-50 text-[#1E5EFF] border border-blue-200"
       >
         <CheckCircle2 className="w-3.5 h-3.5 text-[#1E5EFF] shrink-0" />
-        <span>{language === 'ID' ? 'Sesuai Anggaran (Dalam Pagu)' : 'On Budget (Within Target)'}</span>
+        <span>{language === 'ID' ? 'Sesuai Anggaran (Dalam Budget)' : 'On Budget (Within Target)'}</span>
       </span>
     );
   };
@@ -129,7 +111,7 @@ export const AuditTrailView: React.FC = () => {
   return (
     <div className="space-y-6 pb-16 max-w-6xl mx-auto">
       {/* Header Card */}
-      <div 
+      <div
         id="audit-header-card"
         className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
       >
@@ -140,7 +122,7 @@ export const AuditTrailView: React.FC = () => {
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             {language === 'ID'
-              ? 'Audit trail historis aktivitas upload anggaran & GL actuals, lengkap dengan status kondisi Over/Under Budget, nominal selisih, dan persentase deviasi.'
+              ? 'Riwayat upload Budget dan GL. Ringkasan mengikuti filter Dashboard; rincian GL membandingkan Budget bulan file.'
               : 'Historical audit trail of budget & GL actuals upload activities, complete with Over/Under Budget status conditions, variance amounts, and deviation percentages.'}
           </p>
         </div>
@@ -155,74 +137,13 @@ export const AuditTrailView: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Cards: Health & Over Budget Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div 
-          id="kpi-total-batches-card"
-          className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1"
-        >
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            {language === 'ID' ? 'Total Batch Terunggah' : 'Total Batches Ingested'}
-          </span>
-          <div className="text-xl font-extrabold text-slate-900 font-mono">
-            {stats.totalBatches} <span className="text-xs font-sans font-normal text-slate-500">{language === 'ID' ? 'File Terunggah' : 'Files Ingested'}</span>
-          </div>
-          <p className="text-[11px] text-slate-500 font-mono">
-            Vol: {formatCurrencyUSD(stats.totalIngestedVolume, true)}
-          </p>
-        </div>
-
-        <div 
-          id="kpi-overbudget-card"
-          className="bg-rose-50/50 p-4 rounded-2xl border border-rose-200 shadow-2xs space-y-1"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
-              {language === 'ID' ? 'Batch Over Budget' : 'Over Budget Batches'}
-            </span>
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-          </div>
-          <div className="text-xl font-extrabold text-rose-700 font-mono">
-            {stats.overBudgetCount} <span className="text-xs font-sans font-normal text-rose-600">{language === 'ID' ? 'Batch Melebihi Pagu' : 'Batches Exceeding Budget'}</span>
-          </div>
-          <p className="text-[11px] text-rose-700 font-bold font-mono">
-            Total Over: +{formatCurrencyUSD(stats.totalOverAmount)}
-          </p>
-        </div>
-
-        <div 
-          id="kpi-within-budget-card"
-          className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-200 shadow-2xs space-y-1"
-        >
-          <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
-            {language === 'ID' ? 'Sesuai / Hemat Anggaran' : 'Under / On Budget'}
-          </span>
-          <div className="text-xl font-extrabold text-emerald-700 font-mono">
-            {stats.underBudgetCount + stats.onBudgetCount} <span className="text-xs font-sans font-normal text-emerald-600">{language === 'ID' ? 'Batch Efisien' : 'Efficient Batches'}</span>
-          </div>
-          <p className="text-[11px] text-emerald-700 font-medium">
-            {stats.underBudgetCount} {language === 'ID' ? 'Di Bawah Anggaran' : 'Under Budget'}, {stats.onBudgetCount} {language === 'ID' ? 'Sesuai Anggaran' : 'On Budget'}
-          </p>
-        </div>
-
-        <div 
-          id="kpi-replaced-card"
-          className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200 shadow-2xs space-y-1"
-        >
-          <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">
-            {language === 'ID' ? 'Ganti Data (Replaced)' : 'Superseded (Replaced)'}
-          </span>
-          <div className="text-xl font-extrabold text-amber-800 font-mono">
-            {stats.replacedCount} <span className="text-xs font-sans font-normal text-amber-700">{language === 'ID' ? 'Tergantikan' : 'Superseded'}</span>
-          </div>
-          <p className="text-[11px] text-amber-700 font-medium">
-            {language === 'ID' ? 'Tersimpan versi lama & revisi' : 'Stored historical & revised versions'}
-          </p>
-        </div>
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500">{language === 'ID' ? 'Ringkasan yang sama dengan Dashboard:' : 'Same summary as Dashboard:'} {selectedFiscalYear || '—'} · {selectedQuarter === 'All' ? 'YTD' : selectedQuarter} · {selectedCategory === 'All' ? (language === 'ID' ? 'Semua kategori' : 'All categories') : selectedCategory}</p>
+        <DashboardKpiCards />
       </div>
 
       {/* Filter and Search Toolbar */}
-      <div 
+      <div
         id="audit-filters-bar"
         className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3"
       >
@@ -264,20 +185,20 @@ export const AuditTrailView: React.FC = () => {
           >
             <option value="All">{language === 'ID' ? 'Semua Tipe Upload' : 'All Upload Types'}</option>
             <option value="Monthly GL">{language === 'ID' ? 'Realisasi Bulanan (Monthly GL)' : 'Monthly GL'}</option>
-            <option value="Budget">{language === 'ID' ? 'Pagu Anggaran Tahunan' : 'Annual Budget'}</option>
+            <option value="Budget">{language === 'ID' ? 'Budget Anggaran Tahunan' : 'Annual Budget'}</option>
           </select>
         </div>
       </div>
 
       {/* Ingested Batches List & Detailed Budget Status Rendering */}
-      <div 
+      <div
         id="audit-batches-list-container"
         className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden"
       >
         <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-500">
           <span className="font-bold text-slate-700">
-            {language === 'ID' 
-              ? `Daftar Aktivitas Upload & Rincian Status Anggaran (${filteredUploads.length} Batch)` 
+            {language === 'ID'
+              ? `Daftar Aktivitas Upload & Rincian Status Anggaran (${filteredUploads.length} Batch)`
               : `Upload Activity List & Budget Status Breakdown (${filteredUploads.length} Batches)`}
           </span>
           <div className="flex items-center gap-3 text-[11px]">
@@ -295,8 +216,8 @@ export const AuditTrailView: React.FC = () => {
         <div className="divide-y divide-slate-100">
           {filteredUploads.length === 0 ? (
             <div className="py-12 text-center text-slate-400 text-xs">
-              {language === 'ID' 
-                ? 'Tidak ada riwayat upload yang cocok dengan kata kunci atau filter status.' 
+              {language === 'ID'
+                ? 'Tidak ada riwayat upload yang cocok dengan kata kunci atau filter status.'
                 : 'No upload history matches the search keywords or status filter.'}
             </div>
           ) : (
@@ -304,20 +225,20 @@ export const AuditTrailView: React.FC = () => {
               const isReplaced = batch.status === 'Replaced';
               const isExpanded = expandedBatchId === batch.id;
               const isOver = batch.isOverBudget || batch.budgetStatus === 'Over Budget';
-              
+
               // Find corresponding replacement batch if exists
-              const replacementBatch = batch.replacedBatchId 
-                ? uploads.find((u) => u.id === batch.replacedBatchId) 
+              const replacementBatch = batch.replacedBatchId
+                ? uploads.find((u) => u.id === batch.replacedBatchId)
                 : null;
 
-              const targetBudget = batch.targetBudgetAmount || (batch.uploadType === 'Budget' ? 43_000_000 : 3_450_000);
-              const varianceVal = batch.varianceAmount !== undefined ? batch.varianceAmount : (batch.totalAmount - targetBudget);
-              const variancePctVal = batch.overBudgetPercentage !== undefined ? batch.overBudgetPercentage : ((varianceVal / targetBudget) * 100);
+              const targetBudget = batch.targetBudgetAmount;
+              const varianceVal = batch.varianceAmount;
+              const variancePctVal = batch.overBudgetPercentage;
 
               return (
                 <div key={batch.id} className="transition">
                   {/* Main Row summary */}
-                  <div 
+                  <div
                     id={`batch-row-${batch.id}`}
                     className={`p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/90 transition ${
                       isReplaced ? 'bg-amber-50/15' : isOver ? 'hover:bg-rose-50/20' : 'bg-white'
@@ -326,10 +247,10 @@ export const AuditTrailView: React.FC = () => {
                   >
                     <div className="flex items-start sm:items-center gap-3.5 min-w-0">
                       <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-                        isReplaced 
-                          ? 'bg-amber-100 text-amber-700' 
-                          : isOver 
-                            ? 'bg-rose-100 text-rose-700' 
+                        isReplaced
+                          ? 'bg-amber-100 text-amber-700'
+                          : isOver
+                            ? 'bg-rose-100 text-rose-700'
                             : 'bg-blue-50 text-[#1E5EFF]'
                       }`}>
                         <FileSpreadsheet className="w-5 h-5" />
@@ -340,11 +261,11 @@ export const AuditTrailView: React.FC = () => {
                             {batch.fileName}
                           </span>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                            isReplaced 
-                              ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                            isReplaced
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
                               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}>
-                            {isReplaced ? t.badgeReplaced : t.badgeActive}
+                            {batch.status === 'Cancelled' ? (language === 'ID' ? 'Dibatalkan' : 'Cancelled') : isReplaced ? t.badgeReplaced : t.badgeActive}
                           </span>
                           <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
                             {batch.uploadType}
@@ -357,7 +278,7 @@ export const AuditTrailView: React.FC = () => {
 
                           {batch.overBudgetAccountsCount && batch.overBudgetAccountsCount > 0 ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-100">
-                              {batch.overBudgetAccountsCount} {language === 'ID' ? 'Akun Melebihi Pagu' : 'Accounts Exceeding Budget'}
+                              {batch.overBudgetAccountsCount} {language === 'ID' ? 'Akun Melebihi Budget' : 'Accounts Exceeding Budget'}
                             </span>
                           ) : null}
                         </div>
@@ -402,130 +323,29 @@ export const AuditTrailView: React.FC = () => {
 
                   {/* Expandable Rich Status & Financial Condition Breakdown */}
                   {isExpanded && (
-                    <div 
+                    <div
                       id={`batch-expanded-panel-${batch.id}`}
                       className="px-5 pb-6 pt-3 bg-slate-50/80 border-t border-slate-200/80 space-y-4 animate-in fade-in"
                     >
-                      {/* Financial Condition Card (Req 10) */}
                       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                          <div className="flex items-center gap-2">
-                            <Layers className="w-4 h-4 text-[#1E5EFF]" />
-                            <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
-                              {language === 'ID' ? 'Detail Kondisi Anggaran & Analisis Status (Budget vs Ingested)' : 'Budget Condition Details & Status Analysis (Budget vs Ingested)'}
-                            </h4>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-bold text-slate-400">{language === 'ID' ? 'Status Evaluasi:' : 'Evaluation Status:'}</span>
-                            {getBudgetStatusBadge(batch)}
-                          </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                          <h4 className="font-extrabold text-xs text-slate-900">{language === 'ID' ? 'Rincian data tersimpan' : 'Stored data details'} {batch.targetMonth || ''}</h4>
+                          {getBudgetStatusBadge(batch)}
                         </div>
-
-                        {/* 4-Metric Grid */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                            <span className="text-[11px] font-bold text-slate-400 block mb-0.5">
-                              {language === 'ID' ? 'Total Realisasi / Batch' : 'Total Ingested / Batch'}
-                            </span>
-                            <span className="text-base font-extrabold text-slate-900 font-mono">
-                              {formatCurrencyUSD(batch.totalAmount)}
-                            </span>
-                          </div>
-
-                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                            <span className="text-[11px] font-bold text-slate-400 block mb-0.5">
-                              {language === 'ID' ? 'Pagu Anggaran Pembanding' : 'Benchmark Target Budget'}
-                            </span>
-                            <span className="text-base font-extrabold text-slate-700 font-mono">
-                              {formatCurrencyUSD(targetBudget)}
-                            </span>
-                          </div>
-
-                          <div className={`p-3 rounded-xl border ${
-                            isOver ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          }`}>
-                            <span className="text-[11px] font-bold block mb-0.5">
-                              {isOver ? (language === 'ID' ? 'Besaran Over Budget (Nominal)' : 'Over Budget Amount (Nominal)') : (language === 'ID' ? 'Selisih / Efisiensi (Under Budget)' : 'Variance / Efficiency (Under Budget)')}
-                            </span>
-                            <span className="text-base font-extrabold font-mono flex items-center gap-1">
-                              {isOver ? (
-                                <>
-                                  <TrendingUp className="w-4 h-4 text-rose-600" />
-                                  <span>+{formatCurrencyUSD(Math.abs(varianceVal))}</span>
-                                </>
-                              ) : (
-                                <>
-                                  <TrendingDown className="w-4 h-4 text-emerald-600" />
-                                  <span>-{formatCurrencyUSD(Math.abs(varianceVal))}</span>
-                                </>
-                              )}
-                            </span>
-                          </div>
-
-                          <div className={`p-3 rounded-xl border ${
-                            isOver ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          }`}>
-                            <span className="text-[11px] font-bold block mb-0.5">
-                              {isOver ? (language === 'ID' ? 'Persentase Over Budget' : 'Over Budget Percentage') : (language === 'ID' ? 'Persentase Varians' : 'Variance Percentage')}
-                            </span>
-                            <span className="text-base font-extrabold font-mono">
-                              {variancePctVal > 0 ? `+${variancePctVal.toFixed(2)}%` : `${variancePctVal.toFixed(2)}%`}
-                            </span>
-                          </div>
+                          {[
+                            [language === 'ID' ? 'Nominal file' : 'File amount', formatCurrencyUSD(batch.totalAmount)],
+                            [language === 'ID' ? 'Budget bulan pembanding' : 'Monthly Budget', targetBudget === undefined ? '—' : formatCurrencyUSD(targetBudget)],
+                            [language === 'ID' ? 'Selisih (Actual − Budget)' : 'Variance (Actual − Budget)', varianceVal === undefined ? '—' : formatCurrencyUSD(varianceVal)],
+                            [language === 'ID' ? 'Persentase selisih' : 'Variance percentage', variancePctVal === undefined ? 'n.a.' : `${variancePctVal.toFixed(2)}%`],
+                          ].map(([label, value]) => <div key={label} className="p-3 bg-slate-50 rounded-xl border border-slate-200"><span className="block text-[11px] font-bold text-slate-500 mb-1">{label}</span><span className="font-mono text-base font-extrabold text-slate-800">{value}</span></div>)}
                         </div>
-
-                        {/* Narrative Summary Box */}
-                        <div className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
-                          isOver 
-                            ? 'bg-rose-50/70 border-rose-200 text-rose-900' 
-                            : 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                        }`}>
-                          <div className="font-bold flex items-center gap-2 mb-1">
-                            {isOver ? (
-                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                            ) : (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            )}
-                            <span>{language === 'ID' ? 'Ringkasan Kondisi Anggaran:' : 'Budget Condition Summary:'}</span>
-                          </div>
-                          <p className="font-sans">
-                            {batch.detailsSummary || (isOver
-                              ? (language === 'ID'
-                                  ? `Data batch ini berstatus OVER BUDGET dengan total kelebihan +${formatCurrencyUSD(Math.abs(varianceVal))} (+${Math.abs(variancePctVal).toFixed(2)}%) di atas pagu anggaran yang direncanakan. Terdapat ${batch.overBudgetAccountsCount || 1} pos COA yang melampaui batas anggaran.`
-                                  : `This batch is OVER BUDGET with a total excess of +${formatCurrencyUSD(Math.abs(varianceVal))} (+${Math.abs(variancePctVal).toFixed(2)}%) above planned budget. There are ${batch.overBudgetAccountsCount || 1} COA line items exceeding the budget limit.`)
-                              : (language === 'ID'
-                                  ? `Data batch ini berstatus UNDER BUDGET (hemat nominal sebesar -${formatCurrencyUSD(Math.abs(varianceVal))} / ${Math.abs(variancePctVal).toFixed(2)}% di bawah pagu anggaran yang direncanakan). Seluruh alokasi berada dalam kendali fiskal yang aman.`
-                                  : `This batch is UNDER BUDGET (saving of -${formatCurrencyUSD(Math.abs(varianceVal))} / ${Math.abs(variancePctVal).toFixed(2)}% below planned budget). All allocations are within safe fiscal control.`))}
-                          </p>
-                        </div>
-
-                        {/* Top Over-Budget Account Highlight if applicable */}
-                        {batch.topOverBudgetCoa && (
-                          <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs space-y-1">
-                            <span className="font-bold text-amber-900 block">
-                              {language === 'ID' ? 'Pos Akun dengan Lonjakan Over Budget Tertinggi:' : 'COA Account with Highest Over Budget Surge:'}
-                            </span>
-                            <div className="flex items-center justify-between flex-wrap gap-2 text-amber-800">
-                              <span className="font-mono font-bold">
-                                {batch.topOverBudgetCoa.code} - {batch.topOverBudgetCoa.accountName}
-                              </span>
-                              <div className="flex items-center gap-3 font-mono">
-                                <span>{language === 'ID' ? 'Kelebihan:' : 'Excess:'} <strong>+{formatCurrencyUSD(batch.topOverBudgetCoa.overAmount)}</strong></span>
-                                <span className="bg-amber-100 px-2 py-0.5 rounded text-amber-900 font-bold">
-                                  +{batch.topOverBudgetCoa.variancePct.toFixed(1)}%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Technical File Metadata */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] text-slate-500 font-mono">
-                          <div>{language === 'ID' ? 'Ukuran File' : 'File Size'}: <strong className="text-slate-700">{batch.fileSize}</strong></div>
-                          <div>{language === 'ID' ? 'Total Baris File' : 'Total File Rows'}: <strong className="text-slate-700">{batch.rowCount} {language === 'ID' ? 'baris' : 'rows'}</strong></div>
-                          <div>{language === 'ID' ? 'Baris Diterima' : 'Accepted Rows'}: <strong className="text-emerald-700">{batch.acceptedRows} {language === 'ID' ? 'baris' : 'rows'}</strong></div>
-                          <div>{language === 'ID' ? 'Baris Ditolak' : 'Rejected Rows'}: <strong className="text-slate-700">{batch.rejectedRows} {language === 'ID' ? 'baris' : 'rows'}</strong></div>
+                        <p className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">{batch.detailsSummary || (language === 'ID' ? 'Evaluasi Budget tidak tersedia untuk batch ini.' : 'Budget evaluation is unavailable for this batch.')}</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-500">
+                          <span>{language === 'ID' ? 'Baris dibaca' : 'Rows read'}: {batch.rowCount}</span>
+                          <span>{language === 'ID' ? 'Diterima' : 'Accepted'}: {batch.acceptedRows}</span>
+                          <span>{language === 'ID' ? 'Ditolak' : 'Rejected'}: {batch.rejectedRows}</span>
+                          <span>Batch ID: {batch.id}</span>
                         </div>
                       </div>
 

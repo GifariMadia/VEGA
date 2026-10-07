@@ -25,6 +25,11 @@ def _item(coa: Coa) -> dict:
         "source": "GL auto-register" if coa.is_gl_derived else "Master data / Budget upload",
         "is_active": coa.is_active,
         "is_gl_derived": coa.is_gl_derived,
+        "description": coa.description,
+        "register_system": coa.register_system,
+        "in_scope": coa.in_scope,
+        "manual_budget_amount": str(coa.manual_budget_amount) if coa.manual_budget_amount is not None else None,
+        "manual_budget_fy": coa.manual_budget_fy,
         "created_at": coa.created_at,
     }
 
@@ -74,11 +79,17 @@ def create_coa(payload: CoaCreate, user: AdminUser, db: DbSession):
     department = db.scalar(select(Department).where(Department.code == "MIS000"))
     if department is None:
         raise HTTPException(status_code=503, detail="Master departemen MIS000 belum di-seed.")
-    coa = Coa(code=code, name=payload.name.strip(), category=payload.category, department_id=department.id, is_active=payload.is_active, is_gl_derived=False)
+    if payload.initial_budget is not None and payload.fiscal_year is None:
+        raise HTTPException(status_code=422, detail="Pilih tahun fiskal untuk Budget awal.")
+    coa = Coa(code=code, name=payload.name.strip(), category=payload.category, department_id=department.id, is_active=payload.is_active, is_gl_derived=False,
+              description=payload.description, register_system=payload.register_system, in_scope=payload.in_scope,
+              manual_budget_amount=payload.initial_budget, manual_budget_fy=payload.fiscal_year if payload.initial_budget is not None else None)
     db.add(coa)
     try:
         db.flush()
         db.add(AuditLog(user_id=user.id, action="COA_CREATE", entity="coa", entity_id=coa.id, detail=f"Created COA {code}."))
+        if payload.initial_budget is not None:
+            db.add(AuditLog(user_id=user.id, action="MANUAL_BUDGET", entity="coa", entity_id=coa.id, detail=f"Manual Budget FY{payload.fiscal_year}: {payload.initial_budget}; allocated over 12 fiscal months. File Budget takes precedence for the same account/year."))
         db.commit()
     except IntegrityError as exc:
         db.rollback()

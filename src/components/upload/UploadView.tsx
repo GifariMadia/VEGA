@@ -1,17 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { 
-  UploadCloud, 
-  FileSpreadsheet, 
-  CheckCircle2, 
-  AlertTriangle, 
-  XCircle, 
-  ArrowRight, 
-  ArrowLeft, 
-  Download, 
-  FileText, 
-  RefreshCw, 
-  AlertOctagon, 
-  Check, 
+import {
+  UploadCloud,
+  FileSpreadsheet,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  ArrowRight,
+  ArrowLeft,
+  Download,
+  FileText,
+  RefreshCw,
+  AlertOctagon,
+  Check,
   X,
   ShieldAlert,
   ShieldCheck,
@@ -30,10 +30,21 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import confetti from 'canvas-confetti';
+import { api, type UploadBatch as ServerBatch } from '../../lib/api';
+import { uiBatch } from '../../context/ServerUiProvider';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { UploadType, FiscalMonth, FISCAL_MONTHS, CoaCategory, CoaItem } from '../../types';
 import { formatCurrencyUSD } from '../../lib/calculations';
+
+interface ServerPreview {
+  preview_id: string | null; kind: 'BUDGET' | 'GL'; fiscal_year: number; period: number | null; sheet_read: string;
+  total_amount: string; rows_read: number; rows_accepted: number; rows_filtered: number;
+  preview_rows: Array<{ coa_code: string; name?: string; category?: string; description?: string; amount?: string; annual_amount?: string; account_number?: string; source_row?: number; row_number?: number; period?: number; monthly?: Record<FiscalMonth, string>; vendor?: string; reference?: string; txn_date?: string; section?: string; currency?: string }>;
+  filtered_rows: Array<{ row: number; issue: string; snippet?: string }>;
+  warnings: Array<{ issue: string }>; duplicates: Array<{ issue: string }>; unknown_coas: Array<{ coa_code: string }>;
+  already_loaded: { exists: boolean; existing_batch: ServerBatch | null };
+}
 
 interface ParsedRow {
   rowNum: number;
@@ -63,31 +74,35 @@ interface ParsedRow {
 interface FilteredRowInfo {
   rowNum: number;
   reason: string;
-  snippet: string;
+  snippet: string; rawContent?: string;
 }
 
-export const UploadView: React.FC<{ 
+export const UploadView: React.FC<{
   onNavigateToDashboard?: () => void;
-  onNavigateToMatrix: () => void; 
+  onNavigateToMatrix: () => void;
   onNavigateToAudit: () => void;
 }> = ({
   onNavigateToDashboard,
   onNavigateToMatrix,
   onNavigateToAudit
 }) => {
-  const { 
-    coaList, 
-    checkPeriodCollision, 
-    commitUpload,
-    refreshDashboard 
+  const {
+    availableFiscalYears = [], selectedFiscalYear,
+    coaList,
+    checkPeriodCollision,
+    commitUpload, refreshDashboard
   } = useData();
 
   const { t, isAdmin, language } = useAuth();
 
+  const [serverPreview, setServerPreview] = useState<ServerPreview | null>(null);
+  const [serverError, setServerError] = useState('');
+  const [savedTotal, setSavedTotal] = useState<number | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   // Wizard state
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [uploadType, setUploadType] = useState<UploadType>('Monthly GL');
-  const [fiscalYear, setFiscalYear] = useState<string>('FY2026/2027');
+  const [fiscalYear, setFiscalYear] = useState<string>(selectedFiscalYear || `FY${new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1}/${new Date().getMonth() >= 3 ? new Date().getFullYear() + 1 : new Date().getFullYear()}`);
   const [targetMonth, setTargetMonth] = useState<FiscalMonth>('Aug');
 
   // File & Parsing state
@@ -105,7 +120,6 @@ export const UploadView: React.FC<{
   const [previewSearch, setPreviewSearch] = useState<string>('');
   const [previewFilter, setPreviewFilter] = useState<'all' | 'valid' | 'detected' | 'error'>('all');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [dragActive, setDragActive] = useState<boolean>(false);
 
   // Replacement (GANTI DATA) state
@@ -151,1567 +165,66 @@ export const UploadView: React.FC<{
     );
   }
 
-  // Key normalizer helper for case-insensitive and punctuation-free column matching
-  const normalizeKey = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-  // Strict list of words that indicate a column is a DESCRIPTION or other attribute, NOT a COA code
-  const EXCLUDED_COA_KEYWORDS = [
-    'description', 'deskripsi', 'name', 'nama', 'uraian', 'keterangan', 'comment',
-    'section', 'department', 'departemen', 'divisi', 'category', 'kategori',
-    'currency', 'mata uang', 'vendor', 'amount', 'nominal', 'budget', 'actual',
-    'date', 'tanggal', 'doc', 'document', 'ref', 'reference'
-  ];
-
-  // Primary aliases for COA / Account number columns (English, Indonesian, SAP standards)
-  const COA_PRIMARY_ALIASES = [
-    'account number', 'account no', 'account no.', 'account code', 'account_code',
-    'coa code', 'coa_code', 'coa no', 'coa no.', 'coa number', 'coa',
-    'kode coa', 'no coa', 'no. coa', 'nomor coa', 'no.coa',
-    'kode akun', 'no akun', 'no. akun', 'nomor akun', 'no.akun',
-    'gl account', 'gl account no', 'gl account number', 'gl account code',
-    'g/l account', 'g/l account no', 'gl acct', 'gl_acc', 'gl no', 'kode gl',
-    'kode rekening', 'no rekening', 'no. rekening', 'nomor rekening', 'rekening',
-    'kode perkiraan', 'no perkiraan', 'no. perkiraan', 'nomor perkiraan',
-    'chart of account', 'chart of accounts', 'cost center / coa',
-    'acc no', 'acc number', 'acc code', 'account'
-  ];
-
-  // Helper to identify the COA column key from a row's keys with high precision
-  const findCoaKey = (row: Record<string, any>, sampleRows?: Record<string, any>[]): string | undefined => {
-    if (!row) return undefined;
-    const rowKeys = Object.keys(row);
-    const normalizedPossibles = COA_PRIMARY_ALIASES.map(normalizeKey);
-
-    // 1. Exact normalized match with primary aliases
-    for (const rk of rowKeys) {
-      const nRk = normalizeKey(rk);
-      if (normalizedPossibles.includes(nRk)) {
-        return rk;
-      }
-    }
-
-    // 2. Contains coa/account/akun/rekening/perkiraan WITHOUT any excluded descriptive keywords
-    for (const rk of rowKeys) {
-      const lowKey = rk.toLowerCase();
-      const hasCoaWord = ['coa', 'akun', 'rekening', 'perkiraan', 'account'].some(w => lowKey.includes(w));
-      const hasExcludedWord = EXCLUDED_COA_KEYWORDS.some(w => lowKey.includes(w));
-      if (hasCoaWord && !hasExcludedWord) {
-        return rk;
-      }
-    }
-
-    // 3. Content-based detection: check values across sample rows
-    if (sampleRows && sampleRows.length > 0) {
-      for (const rk of rowKeys) {
-        const lowKey = rk.toLowerCase();
-        if (EXCLUDED_COA_KEYWORDS.some(w => lowKey.includes(w))) continue;
-        
-        let matchCount = 0;
-        let nonBlankCount = 0;
-        for (const sr of sampleRows) {
-          const val = String(sr[rk] ?? '').trim();
-          if (!val) continue;
-          nonBlankCount++;
-          // Checks if value matches SAP 9-digit (\b\d{9}\b) or IT code (IT-\d{5}) or known COA
-          if (/^(\d{9}|\d{5}|IT-\d{5}|\d{9}-.*)$/i.test(val) || coaList.some(c => c.code === val)) {
-            matchCount++;
-          }
-        }
-        if (nonBlankCount > 0 && matchCount / nonBlankCount >= 0.5) {
-          return rk;
-        }
-      }
-    }
-
-    return undefined;
+  const templateFile = async () => {
+    const kind = uploadType === 'Budget' ? 'BUDGET' : 'GL';
+    const response = await fetch(`/api/v1/uploads/templates/${kind}`, { headers: { Authorization: `Bearer ${api.getToken()}` } });
+    if (!response.ok) throw new Error('Template tidak dapat diunduh.');
+    return new File([await response.blob()], `${kind === 'BUDGET' ? 'Budget' : 'GL'} Dummy.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   };
-
-  // Strict matching for fiscal month columns (never matches 'description', 'remarks', etc.)
-  const matchFiscalMonthColumn = (rawKey: string): FiscalMonth | null => {
-    if (!rawKey) return null;
-    const k = rawKey.trim().toLowerCase();
-    
-    // Explicitly reject descriptive, identification, or irrelevant columns
-    // Allow "total" or "budget" only if they are part of a month name or if they are the primary amount indicator
-    if (/(desc|desk|uraian|keterangan|nama|name|dept|div|vendor|account|rekening|perkiraan|rem|catatan|note|actual|forecast|cost|target|pagu|status|ref|doc|tipe|type)/i.test(k)) {
-      return null;
-    }
-
-    // Clean punctuation and spacing
-    const clean = k.replace(/[^a-z0-9]/g, '');
-
-    // Optional trailing 2-digit or 4-digit year, e.g. "Apr '25", "Apr-25", "Apr 2025" -> "apr25" / "apr2025"
-    const YEAR_SUFFIX = '(\\d{2}|\\d{4})?';
-
-    if (new RegExp(`^(apr|april)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln4|bulan4|month4|m04|p04|period04)$/i.test(clean)) return 'Apr';
-    if (new RegExp(`^(may|mei)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln5|bulan5|month5|m05|p05|period05)$/i.test(clean)) return 'May';
-    if (new RegExp(`^(jun|juni|june)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln6|bulan6|month6|m06|p06|period06)$/i.test(clean)) return 'Jun';
-    if (new RegExp(`^(jul|juli|july)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln7|bulan7|month7|m07|p07|period07)$/i.test(clean)) return 'Jul';
-    if (new RegExp(`^(aug|agu|ags|agustus|august)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln8|bulan8|month8|m08|p08|period08)$/i.test(clean)) return 'Aug';
-    if (new RegExp(`^(sep|sept|september)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln9|bulan9|month9|m09|p09|period09)$/i.test(clean)) return 'Sep';
-    if (new RegExp(`^(oct|okt|oktober|october)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln10|bulan10|month10|m10|p10|period10)$/i.test(clean)) return 'Oct';
-    if (new RegExp(`^(nov|nop|november|nopember)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln11|bulan11|month11|m11|p11|period11)$/i.test(clean)) return 'Nov';
-    if (new RegExp(`^(dec|des|desember|december)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln12|bulan12|month12|m12|p12|period12)$/i.test(clean)) return 'Dec';
-    if (new RegExp(`^(jan|januari|january)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln1|bulan1|month1|m01|p01|period01)$/i.test(clean)) return 'Jan';
-    if (new RegExp(`^(feb|februari|february)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln2|bulan2|month2|m02|p02|period02)$/i.test(clean)) return 'Feb';
-    if (new RegExp(`^(mar|maret|march)${YEAR_SUFFIX}$`, 'i').test(clean) || /^(bln3|bulan3|month3|m03|p03|period03)$/i.test(clean)) return 'Mar';
-
-    return null;
-  };
-
-  // Targeted annual budget amount extractor (handles "FY'26 Budget", "Fix Cost", "Budget", etc.)
-  const findBudgetAnnualAmount = (row: Record<string, any>): any => {
-    if (!row) return undefined;
-    const rowKeys = Object.keys(row);
-
-    // Priority 1: Specific FY26 budget column
-    const fy26Candidates = [
-      "fy'26 budget", 'fy26 budget', 'fy26budget', 'budget fy26', 'budget fy 26',
-      'fy2026 budget', 'fy 2026 budget', 'fy 26 budget', 'fy26', 'fy 2026', 'fy2026',
-      "fy'26", 'fy-26', 'fy_26', 'budget 2026', '2026 budget', 'anggaran 2026', 'pagu 2026',
-      'fy26/27', 'fy2026/2027', 'fy 2026/2027', 'fy27', 'fy 27', 'budget fy27'
-    ];
-    for (const rk of rowKeys) {
-      const n = normalizeKey(rk);
-      if (fy26Candidates.some(c => normalizeKey(c) === n)) {
-        if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-          return row[rk];
-        }
-      }
-    }
-
-    // Priority 2: Fix Cost / Anggaran / Proposed Budget / Target
-    const fixCostCandidates = [
-      'fix cost budget', 'budget fix cost', 'fix cost', 'fixcost', 'fixed cost',
-      'annual budget', 'budget amount', 'amount budget', 'amount (budget)',
-      'budget (amount)', 'total budget', 'budget',
-      'anggaran tahunan', 'total anggaran', 'nilai anggaran', 'alokasi anggaran', 'anggaran',
-      'pagu anggaran', 'pagu', 'rencana', 'plan', 'target', 'proposed', 'usulan', 'plafon'
-    ];
-    for (const rk of rowKeys) {
-      const n = normalizeKey(rk);
-      if (n.includes('actual') || n.includes('forecast') || n.includes('variance') || n.includes('selisih')) continue;
-      if (fixCostCandidates.some(c => normalizeKey(c) === n)) {
-        if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-          return row[rk];
-        }
-      }
-    }
-
-    // Priority 3: Prefer columns that identify both a budget and a monetary amount.
-    // This handles headers such as "Amount (Budget)", "Budget Amount (USD)", etc.
-    const budgetAmountKeys = rowKeys.filter((rk) => {
-      const n = normalizeKey(rk);
-      const isBudget = n.includes('budget') || n.includes('anggaran') || n.includes('fixcost') || n.includes('pagu');
-      const isAmount = n.includes('amount') || n.includes('nominal') || n.includes('nilai') || n.includes('total') || n.includes('alokasi');
-      const isComparison = n.includes('actual') || n.includes('forecast') || n.includes('variance') || n.includes('selisih');
-      return isBudget && isAmount && !isComparison;
-    });
-    for (const rk of budgetAmountKeys) {
-      if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-        return row[rk];
-      }
-    }
-
-    // Priority 4: Column containing a budget marker as a fallback.
-    for (const rk of rowKeys) {
-      const n = normalizeKey(rk);
-      if (n.includes('actual') || n.includes('forecast') || n.includes('variance') || n.includes('selisih')) continue;
-      if (n.includes('budget') || n.includes('anggaran') || n.includes('fixcost') || n.includes('pagu')) {
-        if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-          return row[rk];
-        }
-      }
-    }
-
-    // Priority 5: Generic amount/nominal/total/nilai/biaya
-    for (const rk of rowKeys) {
-      const n = normalizeKey(rk);
-      if (n.includes('actual') || n.includes('forecast') || n.includes('variance') || n.includes('selisih')) continue;
-      if (n === 'amount' || n === 'nominal' || n === 'total' || n === 'nilai' || n === 'biaya' || n === 'idr' || n === 'usd' || n === 'jumlah') {
-        if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-          return row[rk];
-        }
-      }
-    }
-
-    // Last resort for exported reports whose header contains extra labels or line breaks.
-    // Never use identity, date, status, or comparison columns as a budget amount.
-    for (const rk of rowKeys) {
-      const n = normalizeKey(rk);
-      const excluded = /coa|account|description|name|category|department|vendor|date|doc|ref|status|actual|forecast|variance|period|month|section|currency/.test(n);
-      if (excluded) continue;
-      const numericValue = parseCleanNumber(row[rk]);
-      if (!isNaN(numericValue) && numericValue !== 0) {
-        return row[rk];
-      }
-    }
-
-    return undefined;
-  };
-
-  const findPriorActualAmount = (row: Record<string, any>): any => {
-    if (!row) return undefined;
-    const rowKeys = Object.keys(row);
-    for (const rk of rowKeys) {
-      const n = normalizeKey(rk);
-      if (n.includes('fy25actual') || n.includes("fy'25 actual") || n.includes('prioractual') || n.includes('actual2025') || (n.includes('actual') && (n.includes('25') || n.includes('prior') || n.includes('lalu')))) {
-        if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-          return row[rk];
-        }
-      }
-    }
-    return undefined;
-  };
-
-  const findForecastAmount = (row: Record<string, any>): any => {
-    if (!row) return undefined;
-    const rowKeys = Object.keys(row);
-    for (const rk of rowKeys) {
-      const n = normalizeKey(rk);
-      if (n.includes('forecast') || n.includes('q3forecast') || n.includes('proyeksi')) {
-        if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
-          return row[rk];
-        }
-      }
-    }
-    return undefined;
-  };
-
-  // Flexible column finder: searches for aliases safely without false-positive cross matching
-  const getField = (row: Record<string, any>, possibleKeys: string[]): any => {
-    if (!row) return undefined;
-    const rowKeys = Object.keys(row);
-    const normalizedPossibles = possibleKeys.map(normalizeKey);
-    
-    // 1. Exact normalized key match (highest priority)
-    for (const rk of rowKeys) {
-      const nRk = normalizeKey(rk);
-      if (normalizedPossibles.includes(nRk)) {
-        if (row[rk] !== undefined && row[rk] !== null && row[rk] !== '') {
-          return row[rk];
-        }
-      }
-    }
-
-    // 2. Substring match (require token length >= 4 to prevent short collisions)
-    for (const rk of rowKeys) {
-      const nRk = normalizeKey(rk);
-      for (const p of normalizedPossibles) {
-        if (p.length >= 4 && nRk.includes(p)) {
-          if (row[rk] !== undefined && row[rk] !== null && row[rk] !== '') {
-            return row[rk];
-          }
-        }
-      }
-    }
-
-    return undefined;
-  };
-
-  // Helper to parse numbers safely (handles IDR dots, commas, accounting parentheses, dashes, currency strings, scientific notation)
-  const parseCleanNumber = (val: any): number => {
-    if (val === null || val === undefined) return NaN;
-    if (typeof val === 'number') {
-      return isNaN(val) ? NaN : val;
-    }
-    
-    let str = String(val).trim();
-    // Replace non-breaking spaces (\u00A0) and whitespace tabs
-    str = str.replace(/[\s\u00A0]+/g, ' ').trim();
-    
-    // Blank, dash, or zero strings commonly used in accounting reports for 0
-    if (!str || /^[-–—\s]+$/.test(str) || str === '0.00' || str === '0,00' || str === '0' || /^#?(N\/A|VALUE!|REF!|NUM!|NA)$/i.test(str)) {
-      return 0;
-    }
-
-    // Accounting format with parentheses: e.g. (368,594) or (114.983) or ($ 368,594) -> negative number
-    let isNegative = false;
-    if (/^\(.*\)$/.test(str)) {
-      isNegative = true;
-      str = str.slice(1, -1).trim();
-    } else if (str.startsWith('-') || str.startsWith('–') || str.startsWith('—')) {
-      isNegative = true;
-      str = str.replace(/^[-–—]\s*/, '');
-    }
-
-    // Strip currency symbols and prefixes/suffixes: Rp, IDR, USD, $, EUR, €, GBP, £, JPY, ¥
-    str = str.replace(/^(Rp\.?|IDR|USD|\$|EUR|€|GBP|£|JPY|¥)\s*/i, '');
-    str = str.replace(/\s*(Rp\.?|IDR|USD|\$|EUR|€|GBP|£|JPY|¥)$/i, '');
-    str = str.trim();
-
-    if (!str || /^[-–—\s]+$/.test(str)) {
-      return 0;
-    }
-
-    // Scientific notation e.g. -1.13986E-06 or 2.5E4
-    if (/^[+-]?\d+(\.\d+)?[eE][+-]?\d+$/.test(str)) {
-      const num = Number(str);
-      return isNegative ? -Math.abs(num) : num;
-    }
-
-    // Indonesian thousands dots with comma decimal (e.g. 1.250.000,50 or 1.250.000)
-    if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(str)) {
-      str = str.replace(/\./g, '').replace(',', '.');
-    } 
-    // US format with comma thousands (e.g. 1,250,000.50 or 1,675,548 or 60,582)
-    else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(str)) {
-      str = str.replace(/,/g, '');
-    } 
-    // Simple comma decimal (e.g. 125,50)
-    else if (/^\d+,\d+$/.test(str)) {
-      str = str.replace(',', '.');
-    }
-    // Loose thousands with commas (e.g. 12,345,678)
-    else if (/^\d+(,\d+)+$/.test(str)) {
-      str = str.replace(/,/g, '');
-    }
-
-    const res = Number(str);
-    if (isNaN(res)) return NaN;
-    return isNegative ? -Math.abs(res) : res;
-  };
-
-  // Helper to parse Excel dates (serial numbers or strings)
-  const parseExcelDate = (val: any): string => {
-    if (!val) return '2026-08-28';
-    if (typeof val === 'number') {
-      try {
-        const date = new Date(Math.round((val - 25569) * 86400 * 1000));
-        if (!isNaN(date.getTime())) {
-          return date.toISOString().slice(0, 10);
-        }
-      } catch {}
-    }
-    const str = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-      return str.slice(0, 10);
-    }
-    const parts = str.split(/[-/.]/);
-    if (parts.length === 3) {
-      if (parts[2].length === 4) {
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-    }
-    return str;
-  };
-
-  // Month-name lookup (EN + ID aliases) used to parse a "Period/Month" cell or column
-  const MONTH_ALIASES: Record<string, FiscalMonth> = {
-    jan: 'Jan', january: 'Jan', januari: 'Jan',
-    feb: 'Feb', february: 'Feb', februari: 'Feb',
-    mar: 'Mar', march: 'Mar', maret: 'Mar',
-    apr: 'Apr', april: 'Apr',
-    may: 'May', mei: 'May',
-    jun: 'Jun', june: 'Jun', juni: 'Jun',
-    jul: 'Jul', july: 'Jul', juli: 'Jul',
-    aug: 'Aug', august: 'Aug', agustus: 'Aug', agu: 'Aug', ags: 'Aug', agt: 'Aug',
-    sep: 'Sep', sept: 'Sep', september: 'Sep',
-    oct: 'Oct', october: 'Oct', okt: 'Oct', oktober: 'Oct',
-    nov: 'Nov', november: 'Nov',
-    dec: 'Dec', december: 'Dec', des: 'Dec', desember: 'Dec'
-  };
-
-  // Parses a single "Period/Month" cell (e.g. "Apr 2026", "04/2026", "Mei", etc.)
-  const parseFiscalPeriod = (val: any): FiscalMonth | undefined => {
-    if (val === null || val === undefined || val === '') return undefined;
-
-    if (typeof val === 'number') {
-      try {
-        const date = new Date(Math.round((val - 25569) * 86400 * 1000));
-        if (!isNaN(date.getTime())) {
-          const key = date.toLocaleString('en-US', { month: 'short' }).toLowerCase();
-          if (MONTH_ALIASES[key]) return MONTH_ALIASES[key];
-        }
-      } catch {}
-    }
-
-    const str = String(val).trim().toLowerCase();
-
-    const nameMatch = str.match(/[a-z]{3,}/);
-    if (nameMatch) {
-      const token = nameMatch[0];
-      if (MONTH_ALIASES[token]) return MONTH_ALIASES[token];
-      const prefix3 = token.slice(0, 3);
-      if (MONTH_ALIASES[prefix3]) return MONTH_ALIASES[prefix3];
-    }
-
-    // Numeric month, e.g. "04/2026", "2026-04", or a bare "4"
-    const numMatch = str.match(/(?:^|[^0-9])(0?[1-9]|1[0-2])(?:[^0-9]|$)/);
-    if (numMatch) {
-      const monthNamesByNum: FiscalMonth[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return monthNamesByNum[parseInt(numMatch[1], 10) - 1];
-    }
-
-    return undefined;
-  };
-
-  // Check if a row is a non-data row (subtotal, category header, blank, footnote, etc.)
-  // This satisfies the critical requirement: administrators do not need to manually clean/filter Excel.
-  const classifyNonDataRow = (
-    row: Record<string, any>, 
-    coaKey?: string,
-    hasCoaColumn: boolean = true,
-    isBudgetUpload: boolean = false
-  ): { isData: boolean; reason?: string; snippet?: string } => {
-    const entries = Object.entries(row).filter(([_, v]) => v !== null && v !== undefined && String(v).trim() !== '');
-    
-    // 1. Completely blank row
-    if (entries.length === 0) {
-      return { isData: false, reason: 'Baris Kosong (Blank Row)', snippet: '(semua sel kosong)' };
-    }
-
-    const values = entries.map(([_, v]) => v);
-    const allText = values.map(v => String(v)).join(' ').toLowerCase();
-
-    // 2. Signature block or Footnotes / Notes (always discard regardless of file type)
-    const footnoteKeywords = [
-      'disetujui oleh', 'dibuat oleh', 'mengetahui', 'approved by', 'prepared by', 
-      'checked by', 'catatan:', 'note:', 'keterangan:', 'page ', 'halaman '
-    ];
-    for (const kw of footnoteKeywords) {
-      if (allText.includes(kw)) {
-        return { 
-          isData: false, 
-          reason: 'Catatan Kaki / Kolom Persetujuan', 
-          snippet: values.slice(0, 2).map(String).join(' | ') 
-        };
-      }
-    }
-
-    // CRITICAL: When the uploaded file has NO COA column at all:
-    // Do NOT discard data rows as non-data! The user needs them to be processed so they are listed under "Rejected Format Issues"
-    if (!hasCoaColumn) {
-      const isPureGrandTotal = allText.startsWith('grand total') || allText.startsWith('total keseluruhan') || allText.includes('grand total fix cost');
-      if (isPureGrandTotal) {
-        return { 
-          isData: false, 
-          reason: 'Baris Ringkasan / Grand Total', 
-          snippet: values.slice(0, 3).map(String).join(' | ') 
-        };
-      }
-      // Treat every non-blank row as a data row that has format issues (missing COA)
-      return { isData: true };
-    }
-    
-    // Resolve COA code
-    let coaVal = '';
-    if (coaKey && row[coaKey] !== undefined) {
-      coaVal = String(row[coaKey] || '').trim();
-    } else {
-      const detectedKey = findCoaKey(row);
-      if (detectedKey && row[detectedKey] !== undefined) {
-        coaVal = String(row[detectedKey] || '').trim();
-      }
-    }
-    
-    // Check if COA is a valid numeric or standard format account code
-    const hasValidCoaCode = /^\d{5,9}$|^IT-\d{5}$/i.test(coaVal);
-
-    // Description text check
-    const rawDesc = String(
-      getField(row, [
-        'description', 'account description', 'account name', 'account_name', 
-        'nama akun', 'deskripsi', 'deskripsi akun', 'uraian', 'uraian akun', 
-        'nama perkiraan', 'keterangan', 'pos beban', 'pos biaya', 'item', 'rincian'
-      ]) || ''
-    ).trim();
-    const descLower = rawDesc.toLowerCase();
-
-    // Collect all text tokens in row
-    const textValues = values
-      .filter(v => typeof v === 'string' && isNaN(Number(v)))
-      .map(v => String(v).trim().toLowerCase());
-
-    // 3. Subtotal or Total row (e.g. "TOTAL DIRECT LABOR", "TOTAL SGA LABOR", "TOTAL FIX COST", "GRAND TOTAL", "Jumlah")
-    const isTotalRow = 
-      descLower.startsWith('total') || 
-      descLower.startsWith('subtotal') || 
-      descLower.startsWith('sub total') || 
-      descLower.startsWith('grand total') || 
-      descLower.startsWith('jumlah') || 
-      descLower.includes('total direct') || 
-      descLower.includes('total indirect') || 
-      descLower.includes('total sga') || 
-      descLower.includes('total fix cost') || 
-      descLower.includes('total other') || 
-      descLower.includes('grand total fix cost') ||
-      allText.includes('grand total') || 
-      allText.includes('total keseluruhan') || 
-      allText.includes('rekapitulasi') ||
-      textValues.some(t => 
-        t === 'total' || 
-        t === 'subtotal' || 
-        t === 'sub total' || 
-        t === 'jumlah' || 
-        t === 'grand total' ||
-        t.startsWith('total ') || 
-        t.startsWith('subtotal ') || 
-        t.startsWith('sub total ') || 
-        t.startsWith('grand total ') || 
-        t.startsWith('jumlah ')
-      );
-
-    if (isTotalRow && !hasValidCoaCode) {
-      return { 
-        isData: false, 
-        reason: `Baris Ringkasan / Subtotal (${rawDesc || textValues[0] || 'Total'})`, 
-        snippet: values.slice(0, 3).map(String).join(' | ') 
-      };
-    }
-
-    // 4. Budget Template: Unbudgeted template row or inactive row without COA code and with 0/empty budget
-    if (isBudgetUpload && !hasValidCoaCode) {
-      const budgetValRaw = findBudgetAnnualAmount(row);
-      const budgetNum = budgetValRaw !== undefined ? parseCleanNumber(budgetValRaw) : NaN;
-      const hasAnnualBudget = !isNaN(budgetNum) && budgetNum !== 0;
-
-      // Also check if any monthly columns have non-zero budget
-      const hasMonthlyBudget = FISCAL_MONTHS.some(m => {
-        const val = getField(row, [m, m.toLowerCase(), `month_${m}`]);
-        if (val !== undefined) {
-          const n = parseCleanNumber(val);
-          return !isNaN(n) && n !== 0;
-        }
-        return false;
-      });
-
-      // If there is NO budget allocated for FY26 (budget is 0, '-', or empty), this is an unbudgeted template item
-      if (!hasAnnualBudget && !hasMonthlyBudget) {
-        return {
-          isData: false,
-          reason: `Baris Template Nir-Anggaran (Tanpa COA & Budget FY26 = 0: ${rawDesc || 'Unbudgeted'})`,
-          snippet: values.slice(0, 4).map(String).join(' | ')
-        };
-      }
-    }
-
-    // 5. GL Upload: Inactive template line with no valid COA code and 0 / NaN actual amount
-    if (!isBudgetUpload && !hasValidCoaCode) {
-      const explicitAmountRaw = getField(row, [
-        'actual amount in loc.curr.', 'actual amount in doc.curr.',
-        'nominal actual amount', 'nominal', 'actual amount', 'actual_amount',
-        'amount', 'nilai', 'actual', 'total'
-      ]);
-      const debitVal = getField(row, ['debits', 'debit', 'dr']);
-      const creditVal = getField(row, ['credits', 'credit', 'cr']);
-      
-      let glAmount = NaN;
-      if (explicitAmountRaw !== undefined && explicitAmountRaw !== '') {
-        glAmount = parseCleanNumber(explicitAmountRaw);
-      } else if (debitVal !== undefined || creditVal !== undefined) {
-        const deb = parseCleanNumber(debitVal) || 0;
-        const cred = parseCleanNumber(creditVal) || 0;
-        glAmount = deb - cred;
-      }
-
-      if (isNaN(glAmount) || glAmount === 0) {
-        return {
-          isData: false,
-          reason: `Baris Template / Spacer (Tanpa COA & Nominal Actual = 0: ${rawDesc || 'Zero Amount'})`,
-          snippet: values.slice(0, 4).map(String).join(' | ')
-        };
-      }
-    }
-
-    // 6. Section Banner / Header without amounts and without valid COA (e.g. "DIRECT LABOR", "SGA LABOR", "OTHER SGA FIX EXPENSES")
-    if (!hasValidCoaCode) {
-      // Find valid non-zero numeric amounts
-      const numericAmounts = values.filter(v => {
-        const num = parseCleanNumber(v);
-        return !isNaN(num) && num !== 0;
-      });
-
-      // If no valid non-zero amounts exist, this is a category / section banner
-      if (numericAmounts.length === 0) {
-        return { 
-          isData: false, 
-          reason: `Judul Seksi / Banner Kategori (${rawDesc || values[0]})`, 
-          snippet: values.join(' | ') 
-        };
-      }
-
-      // If only 1-2 text cells populated without COA code AND without any amounts
-      if (values.length <= 2 && (!coaVal || coaVal === '-') && numericAmounts.length === 0) {
-        return { 
-          isData: false, 
-          reason: `Judul Seksi / Header (${rawDesc || values[0]})`, 
-          snippet: values.join(' | ') 
-        };
-      }
-    }
-
-    // 7. Percentage or Ratio only row (e.g. row with "1.94%", "-0.14%" or small decimals without COA)
-    const isRatioOrPercentageRow = values.length > 0 && values.every(v => {
-      if (typeof v === 'string' && (v.includes('%') || /^[+-]?\d+(\.\d+)?%$/.test(v.trim()))) return true;
-      if (typeof v === 'number' && v > -1 && v < 1 && v !== 0) return true;
-      return false;
-    });
-    if (isRatioOrPercentageRow && !hasValidCoaCode) {
-      return { 
-        isData: false, 
-        reason: 'Baris Rasio / Persentase', 
-        snippet: values.slice(0, 3).map(String).join(' | ') 
-      };
-    }
-
-    // 8. Row without any COA and without any account description
-    if (!coaVal && !rawDesc) {
-      const meaningfulText = textValues.filter(t => t.length > 1 && !['-', '--', 'n/a', '0', 'null', 'undefined'].includes(t));
-      if (meaningfulText.length === 0) {
-        return { 
-          isData: false, 
-          reason: 'Baris Kosong / Spacer Tanpa Akun', 
-          snippet: values.slice(0, 3).map(String).join(' | ') 
-        };
-      }
-    }
-
-    // 9. Explicitly Out-of-Scope Non-IT Department (if raw export contains multiple corporate departments)
-    const deptVal = String(getField(row, ['department', 'departemen', 'divisi']) || '').toLowerCase();
-    if (deptVal && (deptVal.includes('production') || deptVal.includes('general affair') || deptVal.includes('human resource') || deptVal.includes('ga dept'))) {
-      return { 
-        isData: false, 
-        reason: `Di Luar Scope MIS / IT (${deptVal})`, 
-        snippet: values.slice(0, 3).map(String).join(' | ') 
-      };
-    }
-
-    return { isData: true };
-  };
-
-  // Normalizes COA candidate string and matches against Master COAs with maximum resilience
-  const normalizeAndMatchCoa = (
-    rawAccountStr: string,
-    rawAccountName: string,
-    validCoaMap: Map<string, CoaItem>,
-    coaByNameMap: Map<string, CoaItem>
-  ): { 
-    cleanCode: string; 
-    accountPattern?: string; 
-    sectionCode?: string; 
-    matchedCoa?: CoaItem;
-    matchedByName?: boolean;
-  } => {
-    let cleanCode = String(rawAccountStr || '').trim();
-    let accountPattern: string | undefined = undefined;
-    let sectionCode: string | undefined = undefined;
-
-    // 1. Clean Excel numeric artifacts (e.g. 752201001.0 -> 752201001)
-    if (cleanCode.endsWith('.0')) {
-      cleanCode = cleanCode.slice(0, -2);
-    }
-    cleanCode = cleanCode.replace(/^['"`\s]+|['"`\s]+$/g, '');
-
-    // 2. Check if COA cell contains both code and description (e.g. "752201001 - Communication Line" or "[752201001] Line")
-    const combinedMatch = cleanCode.match(/\b(IT-\d{5}|\d{9}|\d{5})\b/i);
-    if (combinedMatch && cleanCode.length > combinedMatch[0].length + 2) {
-      cleanCode = combinedMatch[0];
-    }
-
-    // 3. Handle hyphenated / SAP ledger format (e.g. 752201001-A7744-ME0000 or IT-60101)
-    if (cleanCode.includes('-')) {
-      if (/^IT-\d{5}/i.test(cleanCode)) {
-        cleanCode = cleanCode.toUpperCase();
-      } else {
-        const parts = cleanCode.split('-');
-        cleanCode = parts[0].trim();
-        accountPattern = rawAccountStr.trim();
-        if (parts.length >= 3) {
-          sectionCode = parts[2].trim();
-        }
-      }
-    } 
-    // 4. Handle formatted 9-digit codes with dots or spaces (e.g. "7522.01.001" or "7522 01 001")
-    else if (/^\d{4}[\.\s]\d{2}[\.\s]\d{3}$/.test(cleanCode)) {
-      cleanCode = cleanCode.replace(/[\.\s]/g, '');
-    }
-    // 5. Handle bare 5-digit number that maps to IT-60xxx (e.g. "60101" -> "IT-60101")
-    else if (/^\d{5}$/.test(cleanCode)) {
-      const itCandidate = `IT-${cleanCode}`;
-      if (validCoaMap.has(itCandidate.toUpperCase())) {
-        cleanCode = itCandidate;
-      }
-    }
-    // 6. Handle "IT60101" or "IT 60101"
-    else if (/^IT\s*\d{5}$/i.test(cleanCode)) {
-      cleanCode = `IT-${cleanCode.replace(/[^0-9]/g, '')}`;
-    }
-
-    if (cleanCode && !accountPattern) {
-      accountPattern = `${cleanCode}-A7744-*`;
-    }
-
-    // Lookup in Master COAs
-    let matchedCoa: CoaItem | undefined = undefined;
-    let matchedByName = false;
-    if (cleanCode) {
-      matchedCoa = validCoaMap.get(cleanCode.toUpperCase()) || 
-        (accountPattern ? validCoaMap.get(accountPattern.toUpperCase()) : undefined);
-    }
-
-    // Secondary match: if cleanCode is empty or not in Master COA, try matching by account description / name
-    if (!matchedCoa && rawAccountName) {
-      const normName = rawAccountName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (normName) {
-        const matchByName = coaByNameMap.get(normName);
-        if (matchByName) {
-          matchedCoa = matchByName;
-          cleanCode = matchByName.code;
-          accountPattern = matchByName.accountPattern || `${cleanCode}-A7744-*`;
-          sectionCode = matchByName.sectionCode;
-          matchedByName = true;
-        }
-      }
-    }
-
-    return {
-      cleanCode,
-      accountPattern,
-      sectionCode,
-      matchedCoa,
-      matchedByName
-    };
-  };
-
-  // Detects and consolidates "long format" Budget uploads
-  const consolidateLongFormatBudget = (rawJson: any[]): any[] | null => {
-    if (!rawJson.length) return null;
-
-    // Scan first 15 rows to find a valid sample with non-empty fields
-    let sample: any = null;
-    for (let i = 0; i < Math.min(rawJson.length, 15); i++) {
-      if (rawJson[i] && Object.keys(rawJson[i]).length >= 3) {
-        sample = rawJson[i];
-        break;
-      }
-    }
-    if (!sample) return null;
-
-    const hasPeriodCol = getField(sample, ['period/month', 'period', 'periode', 'bulan', 'month', 'waktu']) !== undefined;
-    const budgetAmountAliases = [
-      'budget amount', 'budget_amount', 'amount budget', 'amount (budget)',
-      'nominal budget', 'nominal (budget)', 'nominal', 'amount', 'anggaran', 'nilai'
-    ];
-    const hasAmountCol = getField(sample, budgetAmountAliases) !== undefined;
-    
-    // Check if wide month columns already exist
-    const hasWideMonthCols = FISCAL_MONTHS.some((m) => getField(sample, [m, m.toLowerCase(), `month_${m}`]) !== undefined);
-
-    if (!hasPeriodCol || !hasAmountCol || hasWideMonthCols) return null;
-
-    type Group = {
-      coa: string;
-      accountName: string;
-      category: string;
-      department: string;
-      monthly: Partial<Record<FiscalMonth, number>>;
-      periodErrors: string[];
-    };
-    const grouped = new Map<string, Group>();
-
-    rawJson.forEach((row) => {
-      const coaKey = findCoaKey(row);
-      const rawCoa = coaKey ? String(row[coaKey] || '') : String(getField(row, COA_PRIMARY_ALIASES) || '');
-      const coa = rawCoa.trim();
-      if (!coa) return;
-
-      // Skip subtotal or non-data rows inside long format
-      const nonDataCheck = classifyNonDataRow(row, coaKey);
-      if (!nonDataCheck.isData) return;
-
-      const coaKeyUpper = coa.toUpperCase();
-      if (!grouped.has(coaKeyUpper)) {
-        grouped.set(coaKeyUpper, {
-          coa,
-          accountName: String(getField(row, ['account description', 'description', 'nama akun', 'account name']) || ''),
-          category: String(getField(row, ['category', 'kategori']) || ''),
-          department: String(getField(row, ['department', 'departemen', 'divisi']) || ''),
-          monthly: {},
-          periodErrors: []
-        });
-      }
-      const g = grouped.get(coaKeyUpper)!;
-
-      const periodRaw = getField(row, ['period/month', 'period', 'periode', 'bulan', 'month', 'waktu']);
-      const fm = parseFiscalPeriod(periodRaw);
-      const amtRaw = getField(row, budgetAmountAliases);
-      const amt = parseCleanNumber(amtRaw);
-
-      if (!fm) {
-        g.periodErrors.push(String(periodRaw ?? '(kosong)'));
-        return;
-      }
-      g.monthly[fm] = (g.monthly[fm] || 0) + (isNaN(amt) ? 0 : amt);
-    });
-
-    if (grouped.size === 0) return null;
-
-    return Array.from(grouped.values()).map((g) => {
-      const out: any = {
-        'Account Number': g.coa,
-        'Account Description': g.accountName,
-        'Category': g.category,
-        'Department': g.department
-      };
-      FISCAL_MONTHS.forEach((m) => {
-        out[m] = g.monthly[m] ?? 0;
-      });
-      if (g.periodErrors.length) {
-        out.__PeriodParseErrors = g.periodErrors;
-      }
-      return out;
-    });
-  };
-
-  // Infer category from text or account description
-  const inferCategory = (rawCat: string, accountName: string): CoaCategory => {
-    const c = (rawCat || '').toLowerCase().trim();
-    const n = (accountName || '').toLowerCase();
-    
-    if (c.includes('software') || n.includes('license') || n.includes('software') || n.includes('saas') || n.includes('cloud') || n.includes('subscription')) return 'Software';
-    if (c.includes('hardware') || n.includes('hardware') || n.includes('laptop') || n.includes('server') || n.includes('rental expense') || n.includes('office equipment') || n.includes('supply')) return 'Hardware';
-    if (c.includes('network') || n.includes('communication') || n.includes('internet') || n.includes('bandwidth') || n.includes('telecom') || n.includes('telkom')) return 'Network';
-    if (c.includes('consulting') || n.includes('subcontract') || n.includes('consulting') || n.includes('professional') || n.includes('audit')) return 'Consulting';
-    if (c.includes('maintenance') || n.includes('repair') || n.includes('maintenance') || n.includes('service') || n.includes('utility')) return 'Maintenance';
-    if (c.includes('training') || n.includes('training') || n.includes('certification') || n.includes('travel')) return 'Training';
-    if (c.includes('sga') || n.includes('sga')) return 'SGA';
-    if (c.includes('direct') && !c.includes('indirect')) return 'Direct';
-    if (c.includes('indirect') || n.includes('indirect') || n.includes('salary') || n.includes('bonus') || n.includes('thr')) return 'Indirect';
-    if (n.includes('fx') || n.includes('foreign exchange') || n.includes('reval')) return 'Finance & FX';
-    return 'Operational';
-  };
-
-  // Generate and download sample template with active COAs
-  const handleDownloadTemplate = () => {
-    let sheetData: any[] = [];
-    if (uploadType === 'Monthly GL') {
-      sheetData = coaList.map((c, i) => ({
-        'Account Number': c.accountPattern || `${c.code}-A7744-ME0000`,
-        'COA_CODE': c.code,
-        'Account Description': c.accountName,
-        'Nominal (Actual Amount)': 120_000_000 + i * 15_000_000,
-        'Doc. Number': `DOC-020292-${String(i + 101).padStart(5, '0')}`,
-        'Posting Date': '2026-08-28',
-        'Vendor': i % 3 === 0 ? 'PT. INDOSAT TBK' : i % 2 === 0 ? 'PT. TELKOM INDONESIA' : 'Direct Vendor',
-        'Reference': `SAP-BATCH-${i + 101}`,
-        'Section Code': c.sectionCode || 'ME0000',
-        'Category': c.category,
-        'Comment': `Reconciled actuals for ${c.accountName}`
-      }));
-    } else {
-      // Annual Budget: All registered COAs
-      sheetData = coaList.map((c) => {
-        const item: any = {
-          'Account Number': c.code,
-          'Account Description': c.accountName,
-          'Category': c.category
-        };
-        FISCAL_MONTHS.forEach((m) => {
-          item[m] = 125_000_000;
-        });
-        return item;
-      });
-    }
-
-    const ws = XLSX.utils.json_to_sheet(sheetData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Actual_GL_Data');
-    XLSX.writeFile(wb, `SAP_Actual_GL_${uploadType.replace(' ', '_')}.xlsx`);
-  };
-
-  // Validate raw data rows with automatic filtering of non-data rows and resilient COA matching
-  const validateUploadedData = (
-    rawJson: any[],
-    overrideType?: UploadType
-  ): { 
-    rows: ParsedRow[]; 
-    newCoas: CoaItem[];
-    filteredRows: FilteredRowInfo[];
-    hasCoaColumn: boolean;
-  } => {
-    const currentUploadType = overrideType || uploadType;
-
-    // Build quick lookup map for existing Master COAs (by code, pattern, and name)
-    const validCoaMap = new Map<string, CoaItem>();
-    const coaByNameMap = new Map<string, CoaItem>();
-
-    coaList.forEach(c => {
-      validCoaMap.set(c.code.toUpperCase(), c);
-      if (c.accountPattern) {
-        validCoaMap.set(c.accountPattern.toUpperCase(), c);
-      }
-      const normName = c.accountName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (normName) {
-        coaByNameMap.set(normName, c);
-      }
-    });
-
-    const localNewCoasMap = new Map<string, CoaItem>();
-    const seenBudgetCodes = new Set<string>();
-    const detectedFilteredRows: FilteredRowInfo[] = [];
-
-    // Check if long format budget consolidation applies
-    const consolidated = currentUploadType === 'Budget' ? consolidateLongFormatBudget(rawJson) : null;
-    const effectiveRawJson = consolidated ?? rawJson;
-
-    // Detect primary COA column from the dataset across sample rows
-    let primaryCoaKey: string | undefined = undefined;
-    for (let i = 0; i < Math.min(effectiveRawJson.length, 15); i++) {
-      primaryCoaKey = findCoaKey(effectiveRawJson[i] || {}, effectiveRawJson.slice(0, 10));
-      if (primaryCoaKey) break;
-    }
-    const hasCoaColumn = Boolean(primaryCoaKey);
-
-    const rows: ParsedRow[] = [];
-    let lastValidCoaCode = '';
-    const isBudgetUpload = currentUploadType === 'Budget';
-
-    effectiveRawJson.forEach((row, index) => {
-      const rowNum = Number(row.__EXCEL_ROW__) || (index + 2); // true Excel row number
-
-      // Filter non-data rows automatically (subtotals, grand totals, category banners, blank lines, unbudgeted template lines)
-      const classification = classifyNonDataRow(row, primaryCoaKey, hasCoaColumn, isBudgetUpload);
-      if (!classification.isData) {
-        detectedFilteredRows.push({
-          rowNum,
-          reason: classification.reason || 'Baris Non-Data Dikecualikan',
-          snippet: classification.snippet || ''
-        });
-        return; // Skip non-data row automatically!
-      }
-
-      const errors: string[] = [];
-
-      // Extract account number / COA code
-      const coaKeyToUse = primaryCoaKey || findCoaKey(row);
-      const rawAccountStr = String(
-        (coaKeyToUse ? row[coaKeyToUse] : undefined) ||
-        getField(row, COA_PRIMARY_ALIASES) || ''
-      ).trim();
-
-      // Extract account name/description
-      let rawAccountName = String(
-        getField(row, [
-          'account description', 'account_name', 'account name', 'nama akun',
-          'deskripsi', 'deskripsi akun', 'nama perkiraan', 'uraian', 'uraian akun',
-          'description', 'comment', 'comment 2', 'keterangan', 'item', 'nama', 'barang'
-        ]) || ''
-      ).trim();
-
-      if (!rawAccountName && !hasCoaColumn) {
-        const nonBlank = Object.values(row).find(v => v !== null && v !== undefined && String(v).trim() !== '' && isNaN(Number(v)));
-        if (nonBlank) rawAccountName = String(nonBlank).trim();
-      }
-
-      // Normalize and match COA
-      const coaMatch = normalizeAndMatchCoa(rawAccountStr, rawAccountName, validCoaMap, coaByNameMap);
-      let cleanCode = coaMatch.cleanCode;
-      const accountNumberPattern = coaMatch.accountPattern;
-      const sectionCode = coaMatch.sectionCode;
-      let matchedCoa = coaMatch.matchedCoa;
-
-      // Extract document number
-      const docNo = String(
-        getField(row, [
-          'doc number', 'doc. number', 'doc no', 'gl_document_no', 'gl document no',
-          'document number', 'reference', 'batch entry', 'fp number', 'no dokumen'
-        ]) || `DOC-SAP-${rowNum}`
-      ).trim();
-
-      // Extract vendor
-      const vendor = String(
-        getField(row, ['vendor', 'vendor name', 'supplier', 'party', 'entity', 'rekanan']) || ''
-      ).trim();
-
-      // Extract reference
-      const reference = String(
-        getField(row, ['reference', 'ref', 'batch-entry', 'fp number', 'no ref']) || ''
-      ).trim();
-
-      // Extract date
-      const rawDate = getField(row, ['date', 'posting date', 'posting_date', 'tanggal']);
-      const postingDate = parseExcelDate(rawDate);
-
-      // Extract category & department
-      const rowCategory = String(getField(row, ['category', 'kategori', 'pd']) || '').trim();
-      const rowDepartment = String(getField(row, ['department', 'departemen', 'divisi']) || '').trim();
-      const currency = String(getField(row, ['curr', 'currency', 'mata uang']) || 'USD').trim();
-
-      // MIS/IT scope check based on the section code embedded directly in the SAP GL
-      // Account Number (e.g. "980302000-A7744-COMM00" -> section "COMM00"), since this
-      // raw SAP export format has no separate "Department" column to read from.
-      const MIS_SECTION_CODES = ['MIS000'];
-      const isOutOfMisScopeBySection = !!sectionCode && !MIS_SECTION_CODES.includes(sectionCode.toUpperCase());
-
-      let amount = 0;
-      let monthlyRecord: Record<FiscalMonth, number> | undefined;
-      let priorActual: number | undefined;
-      let forecast: number | undefined;
-      let isConsolidatedRow = false;
-
-      if (currentUploadType === 'Monthly GL') {
-        const explicitAmountRaw = getField(row, [
-          'nominal actual amount', 'nominal', 'actual amount', 'actual_amount',
-          'amount', 'nilai', 'actual', 'total'
-        ]);
-
-        if (explicitAmountRaw !== undefined && explicitAmountRaw !== '') {
-          amount = parseCleanNumber(explicitAmountRaw);
-        } else {
-          // Check Debits & Credits columns from SAP reports
-          const debitVal = getField(row, ['debits', 'debit', 'dr']);
-          const creditVal = getField(row, ['credits', 'credit', 'cr']);
-          if (debitVal !== undefined || creditVal !== undefined) {
-            const deb = parseCleanNumber(debitVal) || 0;
-            const cred = parseCleanNumber(creditVal) || 0;
-            amount = deb - cred;
-          }
-        }
-
-        if (isNaN(amount)) {
-          errors.push('Rejected Format Issue: Nilai nominal tidak dapat dibaca dari baris data');
-        }
-
-        if (rowDepartment && /needs confirmation/i.test(rowDepartment)) {
-          errors.push(`Rejected Format Issue: Baris di luar scope MIS/IT (${rowDepartment}) — tidak dimasukkan sebagai Actual GL`);
-        } else if (isOutOfMisScopeBySection) {
-          errors.push(`Rejected Format Issue: Baris di luar scope MIS/IT (Section: ${sectionCode}) — tidak dimasukkan sebagai Actual GL`);
-        }
-      } else {
-        // Budget template: detect if table has dedicated multi-month columns or single annual budget column
-        monthlyRecord = {} as any;
-        let sum = 0;
-
-        // Detect month columns strictly (rejects 'description', 'remarks', etc.)
-        const rowKeys = Object.keys(row);
-        const rowMonthMap: Partial<Record<FiscalMonth, string>> = {};
-        rowKeys.forEach((rk) => {
-          const m = matchFiscalMonthColumn(rk);
-          if (m && !rowMonthMap[m]) {
-            rowMonthMap[m] = rk;
-          }
-        });
-
-        const hasMultiMonthCols = Object.keys(rowMonthMap).length >= 3;
-
-        if (hasMultiMonthCols) {
-          // Dedicated monthly columns template
-          FISCAL_MONTHS.forEach((m) => {
-            const colKey = rowMonthMap[m];
-            if (colKey && row[colKey] !== undefined && row[colKey] !== null && String(row[colKey]).trim() !== '') {
-              const mVal = parseCleanNumber(row[colKey]);
-              if (isNaN(mVal)) {
-                errors.push(`Rejected Format Issue: Nominal bulan ${m} tidak valid: "${row[colKey]}"`);
-              } else {
-                (monthlyRecord as any)[m] = mVal;
-                sum += mVal;
-              }
-            } else {
-              (monthlyRecord as any)[m] = 0;
-            }
-          });
-        } else {
-          // Single-column annual budget template (e.g. "FY'26 Budget", "Fix Cost", "Budget", "Total Anggaran")
-          const annualRaw = findBudgetAnnualAmount(row);
-
-          if (annualRaw !== undefined && annualRaw !== null && String(annualRaw).trim() !== '') {
-            const annualVal = parseCleanNumber(annualRaw);
-            if (!isNaN(annualVal)) {
-              const perMonth = Math.round(annualVal / 12);
-              FISCAL_MONTHS.forEach((m) => {
-                (monthlyRecord as any)[m] = perMonth;
-              });
-              sum = annualVal;
-            } else {
-              errors.push(`Rejected Format Issue: Format angka budget tidak valid: "${annualRaw}"`);
-            }
-          } else {
-            // If row has account code/name but budget amount is empty/blank/dash, treat as 0
-            if (cleanCode || rawAccountName) {
-              FISCAL_MONTHS.forEach((m) => {
-                (monthlyRecord as any)[m] = 0;
-              });
-              sum = 0;
-            } else {
-              errors.push('Rejected Format Issue: Kolom alokasi bulan anggaran (Apr - Mar) atau total anggaran tidak ditemukan');
-            }
-          }
-        }
-
-        // Extract benchmark / comparison values if present (e.g. FY'25 Actual, FY'25 Forecast)
-        const priorActualRaw = findPriorActualAmount(row);
-        const priorActualVal = priorActualRaw !== undefined ? parseCleanNumber(priorActualRaw) : undefined;
-        priorActual = priorActualVal !== undefined && !isNaN(priorActualVal) ? priorActualVal : undefined;
-
-        const forecastRaw = findForecastAmount(row);
-        const forecastVal = forecastRaw !== undefined ? parseCleanNumber(forecastRaw) : undefined;
-        forecast = forecastVal !== undefined && !isNaN(forecastVal) ? forecastVal : undefined;
-
-        amount = sum;
-
-        if (Array.isArray((row as any).__PeriodParseErrors) && (row as any).__PeriodParseErrors.length) {
-          errors.push(
-            `Nilai "Period/Month" tidak dikenali untuk ${(row as any).__PeriodParseErrors.length} baris sumber (COA ${cleanCode}): ${(row as any).__PeriodParseErrors.slice(0, 3).join(', ')}${(row as any).__PeriodParseErrors.length > 3 ? ', ...' : ''}`
-          );
-        }
-
-        if (cleanCode) {
-          const codeUpper = cleanCode.toUpperCase();
-          if (seenBudgetCodes.has(codeUpper)) {
-            // Note: multiple line items share this COA (e.g. sub-allocations in Fix Cost sheet)
-            // Consolidated upon commit instead of blocking with fatal error
-            isConsolidatedRow = true;
-          } else {
-            seenBudgetCodes.add(codeUpper);
-          }
-        }
-      }
-
-      // Budget uploads are scoped to the registered Master COA list. Ignore
-      // corporate accounts, subtotal lines, and other source rows outside MIS.
-      // They are filtered out instead of becoming rejected rows in the wizard.
-      if (isBudgetUpload && !matchedCoa) {
-        detectedFilteredRows.push({
-          rowNum,
-          reason: 'Di luar scope Master COA MIS / bukan akun anggaran yang terdaftar',
-          snippet: `${rawAccountStr || '(tanpa COA)'} | ${rawAccountName || '(tanpa uraian)'}`
-        });
-        return;
-      }
-
-      // Safeguard for Budget Uploads: If row has no COA and budget amount is 0, filter it out as unbudgeted template line
-      if (isBudgetUpload && !cleanCode && amount === 0) {
-        detectedFilteredRows.push({
-          rowNum,
-          reason: `Baris Template Nir-Anggaran (Tanpa COA & Budget FY26 = 0: ${rawAccountName || 'Unbudgeted'})`,
-          snippet: `Desc: ${rawAccountName || '-'} | Budget: 0`
-        });
-        return;
-      }
-
-      if (!hasCoaColumn && !isBudgetUpload) {
-        errors.push('Rejected Format Issue: Kolom Kode COA (Account Number) tidak ditemukan pada file Excel');
-      } else if (!cleanCode && !isBudgetUpload) {
-        errors.push(
-          amount > 0 
-            ? `Rejected Format Issue: Baris memiliki alokasi anggaran (${amount.toLocaleString()}) namun kolom/kode COA tidak terisi`
-            : 'Rejected Format Issue: Kolom/Kode COA tidak terisi pada baris data'
-        );
-      } else if (!cleanCode && isBudgetUpload) {
-        // Keep budget-only allocation rows visible even when the source has no COA.
-        // The synthetic key preserves each value during consolidation and commit.
-        cleanCode = `UNMAPPED-BUDGET-${rowNum}`;
-      } else {
-        lastValidCoaCode = cleanCode;
-      }
-
-      // Wajib Terdaftar di Master COA: Secara otomatis mendaftarkan COA baru jika belum ada
-      // (tidak berlaku untuk baris GL yang sudah ditolak karena di luar scope MIS/IT,
-      // supaya akun departemen lain tidak ikut mencemari Master COA sebagai "MIS Department")
-      const skipAutoRegister = currentUploadType === 'Monthly GL' && isOutOfMisScopeBySection;
-      if (!matchedCoa && cleanCode && !cleanCode.startsWith('UNMAPPED-BUDGET-') && !skipAutoRegister) {
-        const newCoaItem: CoaItem = {
-          code: cleanCode,
-          accountPattern: accountNumberPattern || `${cleanCode}-A7744-*`,
-          accountName: rawAccountName || 'Account Baru Terdeteksi',
-          category: inferCategory('', rawAccountName),
-          department: 'MIS Department',
-          registerSystem: 'Auto-Detected',
-          status: 'Active',
-          description: `Terdeteksi otomatis saat upload: ${rawAccountName || 'Akun Baru'}`,
-          inScope: true,
-          scopeStatus: 'Active (In-Scope)'
-        };
-        localNewCoasMap.set(cleanCode.toUpperCase(), newCoaItem);
-        matchedCoa = newCoaItem;
-      }
-
-      rows.push({
-        rowNum,
-        coaCode: matchedCoa?.code || cleanCode,
-        accountPattern: accountNumberPattern || matchedCoa?.accountPattern,
-        accountName: matchedCoa?.accountName || rawAccountName || 'Account Tidak Terdaftar',
-        category: matchedCoa?.category || inferCategory(rowCategory, rawAccountName),
-        department: matchedCoa?.department || rowDepartment || 'MIS Department',
-        sectionCode: sectionCode || matchedCoa?.sectionCode,
-        currency,
-        amount,
-        priorActual,
-        forecast,
-        isConsolidated: isConsolidatedRow,
-        vendor: vendor || undefined,
-        postingDate,
-        reference: reference || undefined,
-        description: rawAccountName || `GL Posting ${cleanCode}`,
-        docNo: docNo || `GL-${rowNum}`,
-        monthly: monthlyRecord,
-        // Budget rows are valid when their COA is valid. Auxiliary fields such as
-        // an unrecognized period must not reject an otherwise usable allocation.
-        isValid: isBudgetUpload ? true : errors.length === 0,
-        isAutoDetected: false,
-        errors
-      });
-    });
-
-    // Safety fallback: If file has no COA column and rows ended up empty, convert all non-empty raw rows into rejected format issues
-    if (!hasCoaColumn && rows.length === 0 && effectiveRawJson.length > 0) {
-      effectiveRawJson.forEach((row, idx) => {
-        const rowVals = Object.values(row).filter(v => v !== '' && v !== null && v !== undefined && !String(v).startsWith('__EXCEL_ROW__'));
-        if (rowVals.length > 0) {
-          const rowNum = Number(row.__EXCEL_ROW__) || (idx + 2);
-          const label = String(rowVals[0] || `Baris Data ${rowNum}`);
-          rows.push({
-            rowNum,
-            coaCode: '(tidak ada COA)',
-            accountName: label,
-            category: 'Operational',
-            department: 'MIS Department',
-            currency: 'IDR',
-            amount: 0,
-            isValid: false,
-            isAutoDetected: false,
-            errors: ['Rejected Format Issue: Kolom Kode COA (Account Number) tidak ditemukan pada file Excel']
-          });
-        }
-      });
-    }
-
-    return {
-      rows,
-      newCoas: Array.from(localNewCoasMap.values()),
-      filteredRows: detectedFilteredRows,
-      hasCoaColumn
-    };
-  };
-
-  // Open inline edit modal for a specific row
-  const handleStartEditRow = (row: ParsedRow) => {
-    setEditingRowIndex(row.rowNum);
-    setEditFormData({
-      coaCode: row.coaCode,
-      amount: row.amount,
-      description: row.description || '',
-      docNo: row.docNo || ''
-    });
-  };
-
-  // Save inline row edit and re-validate
-  const handleSaveEditedRow = () => {
-    if (!editingRowIndex) return;
-
-    const updatedRaw = parsedRows.map((r) => {
-      if (r.rowNum === editingRowIndex) {
-        return {
-          'Account Number': editFormData.coaCode.trim(),
-          'Nominal (Actual Amount)': editFormData.amount,
-          'Doc. Number': editFormData.docNo,
-          'Account Description': editFormData.description,
-          ...(r.monthly || {})
-        };
-      }
-      return {
-        'Account Number': r.accountPattern || r.coaCode,
-        'Account Description': r.accountName,
-        'Nominal (Actual Amount)': r.amount,
-        'Doc. Number': r.docNo,
-        'Vendor': r.vendor,
-        'Posting Date': r.postingDate,
-        'Reference': r.reference,
-        'Section Code': r.sectionCode,
-        ...(r.monthly || {})
-      };
-    });
-
-    const validated = validateUploadedData(updatedRaw);
-    setParsedRows(validated.rows);
-    setDetectedNewCoas(validated.newCoas);
-    setFileMissingCoaColumn(!validated.hasCoaColumn);
-    setEditingRowIndex(null);
-  };
-
-  // Delete a faulty row
-  const handleDeleteRow = (rowNum: number) => {
-    const filtered = parsedRows.filter((r) => r.rowNum !== rowNum);
-    const updatedRaw = filtered.map((r) => ({
-      'Account Number': r.accountPattern || r.coaCode,
-      'Account Description': r.accountName,
-      'Nominal (Actual Amount)': r.amount,
-      'Doc. Number': r.docNo,
-      'Vendor': r.vendor,
-      'Posting Date': r.postingDate,
-      'Reference': r.reference,
-      'Section Code': r.sectionCode,
-      ...(r.monthly || {})
-    }));
-    const validated = validateUploadedData(updatedRaw);
-    setParsedRows(validated.rows);
-    setDetectedNewCoas(validated.newCoas);
-    setFilteredOutRows(validated.filteredRows);
-    setFileMissingCoaColumn(!validated.hasCoaColumn);
-  };
-
-  // Switch sheet from available sheets in the uploaded workbook
-  const handleSwitchSheet = (newSheetName: string) => {
-    if (!rawFileBuffer) return;
+  const handleDownloadTemplate = async () => {
     try {
-      setIsProcessing(true);
-      setSelectedSheet(newSheetName);
-      const workbook = XLSX.read(rawFileBuffer, { type: 'array' });
-      const worksheet = workbook.Sheets[newSheetName];
-      if (!worksheet) {
-        alert(`Sheet "${newSheetName}" tidak ditemukan.`);
-        setIsProcessing(false);
-        return;
-      }
-      parseWorksheetData(worksheet, newSheetName);
-    } catch (err: any) {
-      alert(`Gagal membaca sheet: ${err.message}`);
-    } finally {
-      setIsProcessing(false);
-    }
+      const file = await templateFile(); const url = URL.createObjectURL(file);
+      const link = document.createElement('a'); link.href = url; link.download = file.name; link.click(); URL.revokeObjectURL(url);
+    } catch (reason) { setServerError(reason instanceof Error ? reason.message : 'Gagal mengunduh template.'); }
   };
-
-  // Parses worksheet with multi-row scoring and header detection
-  const parseWorksheetData = (worksheet: XLSX.WorkSheet, sheetName: string) => {
-    const rawMatrix: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-    if (rawMatrix.length === 0) {
-      alert('Worksheet tampak kosong atau tidak memiliki baris data.');
-      return;
-    }
-
-    // Intelligent Header Detection: scan rows 0 to 35 and score candidate rows
-    let bestHeaderRowIndex = -1;
-    let highestScore = -1;
-    let detectedHeaders: string[] = [];
-
-    const coaHeaderTokens = [
-      'account number', 'account no', 'account code', 'coa', 'kode coa', 'no coa', 
-      'kode akun', 'no akun', 'gl account', 'gl acct', 'kode rekening', 'rekening',
-      'kode perkiraan', 'acc no', 'account', 'coa no', 'coa no.', 'coano'
-    ];
-    const descHeaderTokens = ['account description', 'nama akun', 'deskripsi', 'description', 'uraian', 'keterangan'];
-    const amountHeaderTokens = [
-      'nominal', 'actual amount', 'budget amount', 'anggaran', 'nilai anggaran', 
-      'total', 'amount', 'budget', 'actual', 'forecast', 'fix cost', 'fixcost', 'cost',
-      'apr', 'may', 'mei', 'jun', 'jul', 'aug', 'agu', 'sep', 'oct', 'okt', 'nov', 'dec', 'des'
-    ];
-
-    for (let r = 0; r < Math.min(rawMatrix.length, 35); r++) {
-      const row = rawMatrix[r];
-      if (!Array.isArray(row)) continue;
-      
-      const nonBlankCells = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '');
-      if (nonBlankCells.length < 2) continue; // Skip title banner lines
-
-      let score = 0;
-      const rowStrings = row.map(c => String(c || '').toLowerCase().trim());
-      const rowJoined = rowStrings.join(' ');
-
-      // Score for COA keywords (+20)
-      if (coaHeaderTokens.some(tok => rowStrings.some(s => s === tok || s.includes(tok)))) {
-        score += 20;
-      }
-
-      // Score for Description keywords (+10)
-      if (descHeaderTokens.some(tok => rowStrings.some(s => s === tok || s.includes(tok)))) {
-        score += 10;
-      }
-
-      // Score for Amount / Month keywords (+15)
-      const monthMatches = amountHeaderTokens.filter(tok => rowStrings.some(s => s === tok || s.includes(tok))).length;
-      score += Math.min(monthMatches * 3, 25);
-
-      // Penalize metadata / header info rows with colons (e.g. "Departemen: MIS", "Status: Approved")
-      if (rowJoined.includes(':')) {
-        score -= 10;
-      }
-
-      // Penalize rows where almost all cells are numeric
-      const numericCount = nonBlankCells.filter(c => typeof c === 'number' || (!isNaN(Number(c)) && Number(c) > 1000)).length;
-      if (numericCount > nonBlankCells.length * 0.6) {
-        score -= 25; // Likely an actual data row, not a header!
-      }
-
-      if (score > highestScore && score >= 15) {
-        highestScore = score;
-        bestHeaderRowIndex = r;
-        detectedHeaders = row.map(cell => String(cell || '').trim());
-      }
-    }
-
-    // Fallback: If no financial header reached score >= 15 (e.g. arbitrary Excel format without standard COA),
-    // find the first candidate table header row with at least 2 non-blank text cells
-    if (bestHeaderRowIndex === -1) {
-      for (let r = 0; r < Math.min(rawMatrix.length, 15); r++) {
-        const row = rawMatrix[r];
-        if (!Array.isArray(row)) continue;
-        const nonBlank = row.filter(c => c !== null && c !== undefined && String(c).trim() !== '');
-        const textCells = nonBlank.filter(c => typeof c === 'string' && isNaN(Number(c)));
-        if (textCells.length >= 2 && textCells.length >= nonBlank.length * 0.4) {
-          bestHeaderRowIndex = r;
-          detectedHeaders = row.map(cell => String(cell || '').trim());
-          break;
-        }
-      }
-    }
-
-    if (bestHeaderRowIndex === -1 && rawMatrix.length > 1) {
-      bestHeaderRowIndex = 0;
-      detectedHeaders = (rawMatrix[0] || []).map(cell => String(cell || '').trim());
-    }
-
-    // Check if the row directly below has sub-headers (e.g. wide months under "Period" / "Alokasi")
-    if (bestHeaderRowIndex !== -1 && bestHeaderRowIndex + 1 < rawMatrix.length) {
-      const nextRow = rawMatrix[bestHeaderRowIndex + 1];
-      if (Array.isArray(nextRow)) {
-        const nextMonthMatches = nextRow.filter(c => {
-          const s = String(c || '').toLowerCase().trim();
-          return MONTH_ALIASES[s] !== undefined;
-        }).length;
-
-        if (nextMonthMatches >= 3) {
-          // Merge sub-headers with primary headers
-          detectedHeaders = detectedHeaders.map((h, colIdx) => {
-            const sub = String(nextRow[colIdx] || '').trim();
-            if (sub && MONTH_ALIASES[sub.toLowerCase()]) {
-              return sub;
-            }
-            return h || sub;
-          });
-          bestHeaderRowIndex = bestHeaderRowIndex + 1; // Move past sub-header row
-        }
-      }
-    }
-
-    let jsonRows: any[] = [];
-    if (bestHeaderRowIndex !== -1 && detectedHeaders.length > 0) {
-      for (let r = bestHeaderRowIndex + 1; r < rawMatrix.length; r++) {
-        const row = rawMatrix[r];
-        if (!Array.isArray(row) || row.every(c => c === '' || c === null || c === undefined)) continue;
-        const obj: Record<string, any> = {};
-        detectedHeaders.forEach((h, colIdx) => {
-          if (h) {
-            const key = obj[h] !== undefined ? `${h}_${colIdx}` : h;
-            obj[key] = row[colIdx];
-          } else {
-            obj[`COL_${colIdx}`] = row[colIdx];
-          }
-        });
-        obj['__EXCEL_ROW__'] = r + 1; // Real 1-based row index in Microsoft Excel
-        jsonRows.push(obj);
-      }
-    } else {
-      // Fallback to standard sheet_to_json
-      const rawFallback = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as any[];
-      jsonRows = rawFallback.map((row, idx) => ({ ...row, __EXCEL_ROW__: idx + 2 }));
-    }
-
-    if (jsonRows.length === 0) {
-      alert('File spreadsheet tampak kosong atau tidak memiliki baris data yang dapat dibaca.');
-      return;
-    }
-
-    // Inspect headers and early row contents for classification
-    const firstRowKeys = Object.keys(jsonRows[0] || {}).map(k => k.toLowerCase().trim());
-    
-    // Check for explicit Budget indicators (e.g. "FY'26 Budget", "Fix Cost", "Budget", "Pagu", "Anggaran", wide month columns)
-    const hasExplicitBudgetCol = firstRowKeys.some(k => 
-      k.includes('budget') || k.includes('anggaran') || k.includes('pagu') || k.includes('fix cost') || k.includes('fixcost') ||
-      k.includes('fy26') || k.includes("fy'26") || k.includes('fy 26') || k.includes('fy2026') ||
-      k.includes('plan') || k.includes('target')
-    );
-    const hasMonthCols = firstRowKeys.some(k => matchFiscalMonthColumn(k) !== null);
-
-    // Check for explicit Actuals GL indicators (e.g. "Doc. Number", "Posting Date", "Vendor", "Debits", "Credits")
-    const hasActualGlCols = firstRowKeys.some(k => 
-      k.includes('doc') || k.includes('posting') || k.includes('vendor') || k.includes('debit') || k.includes('dr/cr')
-    );
-
-    let activeType = uploadType;
-    if (uploadType === 'Budget') {
-      // User explicitly selected Budget. Keep as Budget unless it is strictly an SAP transaction journal with Doc No & Posting Date and NO budget columns
-      if (hasActualGlCols && !hasExplicitBudgetCol && !hasMonthCols) {
-        activeType = 'Monthly GL';
-        setUploadType('Monthly GL');
-        setAutoDetectionNotice('Format transaksi jurnal SAP GL terdeteksi — tipe upload disesuaikan ke "Monthly GL (Actuals)".');
-      } else {
-        setAutoDetectionNotice(null);
-      }
-    } else {
-      // User currently has Monthly GL selected. If the file has budget columns or month allocations, switch to Budget!
-      if (hasExplicitBudgetCol || hasMonthCols) {
-        activeType = 'Budget';
-        setUploadType('Budget');
-        setAutoDetectionNotice('Format file Fix Cost / Anggaran terdeteksi — tipe upload otomatis disesuaikan ke "Budget".');
-      } else {
-        setAutoDetectionNotice(null);
-      }
-    }
-
-    const validated = validateUploadedData(jsonRows, activeType);
-    setParsedRows(validated.rows);
-    setDetectedNewCoas(validated.newCoas);
-    setFilteredOutRows(validated.filteredRows);
-    setFileMissingCoaColumn(!validated.hasCoaColumn);
-    setCurrentStep(2);
-  };
+  const handleStartEditRow = (_row: ParsedRow) => { setServerError('Perbaiki baris di file Excel lalu unggah ulang agar preview dan data tersimpan tetap sama.'); };
+  const handleSaveEditedRow = () => { setEditingRowIndex(null); };
+  const handleDeleteRow = (_rowNum: number) => { setServerError('Hapus baris di file Excel lalu unggah ulang agar total upload tetap dapat diverifikasi.'); };
+  const handleSwitchSheet = (_name: string) => {};
 
   // Process File ingestion with auto-detection of sheets and headers
   const processFile = async (file: File) => {
-    setIsProcessing(true);
-    setUploadedFileName(file.name);
-    setUploadedFileSize(`${(file.size / 1024).toFixed(1)} KB`);
-
+    if (isProcessing) return;
+    setIsProcessing(true); setSavedTotal(null); setServerError(''); setServerPreview(null); setCommitResult(null);
+    setParsedRows([]); setDetectedNewCoas([]); setExistingBatch(null); setFilteredOutRows([]);
+    setUploadedFileName(file.name); setUploadedFileSize(`${(file.size / 1024).toFixed(1)} KB`);
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      setRawFileBuffer(arrayBuffer);
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-
-      setAvailableSheets(workbook.SheetNames);
-
-      // Intelligent sheet selection: prioritize budget/fix cost/gl/actual/data sheets
-      let targetSheetName = workbook.SheetNames[0];
-      const preferredSheet = workbook.SheetNames.find(s => {
-        const lower = s.toLowerCase().trim();
-        return lower.includes('budget') || lower.includes('anggaran') || lower.includes('fix cost') || 
-               lower.includes('fixcost') || lower.includes('gl') || lower.includes('actual') || 
-               lower.includes('core') || lower.includes('data') || lower.includes('sap') || 
-               lower.includes('mis') || lower.includes('cost');
-      });
-
-      if (preferredSheet) {
-        targetSheetName = preferredSheet;
-      } else if (workbook.SheetNames.length > 1) {
-        // Pick sheet with largest row count
-        let maxRows = 0;
-        workbook.SheetNames.forEach(sName => {
-          const ws = workbook.Sheets[sName];
-          if (ws && ws['!ref']) {
-            const r = XLSX.utils.decode_range(ws['!ref']);
-            const count = r.e.r - r.s.r;
-            if (count > maxRows) {
-              maxRows = count;
-              targetSheetName = sName;
-            }
-          }
-        });
-      }
-
-      setSelectedSheet(targetSheetName);
-      const worksheet = workbook.Sheets[targetSheetName];
-      if (!worksheet) {
-        alert('Worksheet tidak dapat dibaca dari file Excel.');
-        setIsProcessing(false);
-        return;
-      }
-
-      parseWorksheetData(worksheet, targetSheetName);
-    } catch (err: any) {
-      alert(`Gagal memproses file: ${err.message || 'Format tidak dikenali'}`);
-    } finally {
-      setIsProcessing(false);
-    }
+      if (!file.name.toLowerCase().endsWith('.xlsx')) throw new Error('Format file tidak sesuai. Gunakan workbook .xlsx untuk Budget atau GL.');
+      if (file.size === 0) throw new Error('File kosong. Pilih workbook Excel yang berisi data.');
+      if (file.size > 50 * 1024 * 1024) throw new Error('Ukuran file melebihi batas 50 MB.');
+      const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      if (signature[0] !== 0x50 || signature[1] !== 0x4b) throw new Error('Isi file bukan workbook .xlsx yang valid. Mengubah nama ekstensi file tidak mengubah formatnya.');
+      const form = new FormData(); form.append('file', file); form.append('kind', uploadType === 'Budget' ? 'BUDGET' : 'GL'); form.append('register_new_coas', 'true');
+      const response = await api.request<ServerPreview>('/uploads/preview', { method: 'POST', body: form });
+      if (!response.success || !response.data.preview_id) throw new Error(response.errors?.map(error => `${error.row ? `Baris ${error.row}: ` : ''}${error.issue}`).join('\n') || response.message);
+      const preview = {
+        ...response.data,
+        filtered_rows: response.data.filtered_rows ?? [],
+        unknown_coas: response.data.unknown_coas ?? [],
+        warnings: response.data.warnings ?? [],
+        duplicates: response.data.duplicates ?? [],
+        preview_rows: response.data.preview_rows ?? [],
+      };
+      if (!Array.isArray(response.data.preview_rows)) throw new Error('Server upload masih memakai versi lama. Buka tautan aplikasi terbaru lalu unggah ulang.');
+      setServerPreview(preview);
+      setFiscalYear(`FY${preview.fiscal_year}/${preview.fiscal_year + 1}`);
+      if (preview.period) setTargetMonth(FISCAL_MONTHS[preview.period - 1]);
+      setSelectedSheet(preview.sheet_read); setAvailableSheets([preview.sheet_read]);
+      setFilteredOutRows(preview.filtered_rows.map(row => ({ rowNum: row.row, reason: row.issue, snippet: row.snippet || '', rawContent: row.snippet || '' })));
+      const unknown = new Set(preview.unknown_coas.map(account => account.coa_code));
+      setParsedRows(preview.preview_rows.map(row => ({
+        rowNum: row.source_row || row.row_number || 0, coaCode: row.coa_code, accountName: row.name || row.description || row.coa_code,
+        category: row.category || coaList.find(coa => coa.code === row.coa_code)?.category || 'Uncategorized',
+        amount: Number(row.annual_amount ?? row.amount ?? 0), accountPattern: row.account_number, description: row.description,
+        vendor: row.vendor, postingDate: row.txn_date, reference: row.reference, docNo: row.reference,
+        sectionCode: row.section, currency: row.currency, monthly: row.monthly ? Object.fromEntries(Object.entries(row.monthly).map(([month, value]) => [month, Number(value)])) as Record<FiscalMonth, number> : undefined,
+        periodMonth: row.period ? FISCAL_MONTHS[row.period - 1] : undefined, isValid: true, errors: [], isAutoDetected: unknown.has(row.coa_code)
+      })));
+      setDetectedNewCoas(preview.unknown_coas.map(account => ({ code: account.coa_code, accountName: preview.preview_rows.find(row => row.coa_code === account.coa_code)?.description || account.coa_code, category: 'Uncategorized', department: 'MIS Department', registerSystem: 'Auto-Detected', status: 'Active', description: 'Akan didaftarkan saat konfirmasi upload.', inScope: true })));
+      setAutoDetectionNotice([`Periode file: FY${preview.fiscal_year}/${preview.fiscal_year + 1}${preview.period ? ` (${FISCAL_MONTHS[preview.period - 1]})` : ''}.`, ...[...preview.warnings, ...preview.duplicates].map(warning => warning.issue)].join(' | '));
+      setFileMissingCoaColumn(false); setCurrentStep(2);
+    } catch (reason) { setServerError(reason instanceof Error ? reason.message : 'Gagal membaca file.'); }
+    finally { setIsProcessing(false); }
   };
 
   // Drag & drop handlers
@@ -1735,54 +248,34 @@ export const UploadView: React.FC<{
   };
 
   // Quick Demo Fill: Standard clean sample
-  const handleLoadSample = (withErrors: boolean = false) => {
-    let sampleData: any[] = [];
-    if (uploadType === 'Monthly GL') {
-      sampleData = coaList.map((c, idx) => ({
-        'Account Number': withErrors && idx === 3 ? 'INVALID-999' : (c.accountPattern || `${c.code}-A7744-COMM00`),
-        'Account Description': c.accountName,
-        'Nominal (Actual Amount)': withErrors && idx === 5 ? 'NOT_A_NUMBER' : Math.round(180_000_000 + idx * 15_000_000),
-        'Doc. Number': `DOC-020292-${String(idx + 101).padStart(5, '0')}`,
-        'Posting Date': '2026-08-28',
-        'Vendor': idx % 3 === 0 ? 'PT. INDOSAT TBK' : idx % 2 === 0 ? 'PT. TELKOM INDONESIA' : 'Direct Core Vendor',
-        'Reference': `SAP-640260${idx + 100}`,
-        'Section Code': c.sectionCode || 'COMM00',
-        'Category': c.category
-      }));
-    } else {
-      sampleData = coaList.map((c, idx) => {
-        const row: any = {
-          'Account Number': withErrors && idx === 2 ? 'IT-UNKNOWN' : c.code,
-          'Account Description': c.accountName,
-          'Category': c.category
-        };
-        FISCAL_MONTHS.forEach((m) => {
-          row[m] = Math.round(150_000_000 + idx * 10_000_000);
-        });
-        return row;
-      });
-    }
-
-    setUploadedFileName(`SAP_${uploadType.replace(' ', '_')}_${fiscalYear.slice(0, 6)}_${withErrors ? 'WithErrors' : 'Valid'}.xlsx`);
-    setUploadedFileSize('380 KB');
-    setAutoDetectionNotice(null);
-    const validated = validateUploadedData(sampleData);
-    setParsedRows(validated.rows);
-    setDetectedNewCoas(validated.newCoas);
-    setFilteredOutRows(validated.filteredRows);
-    setFileMissingCoaColumn(!validated.hasCoaColumn);
-    setCurrentStep(2);
+  const handleLoadSample = async (withErrors: boolean = false) => {
+    try {
+      let file = await templateFile();
+      if (withErrors) {
+        const book = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheet = book.Sheets[uploadType === 'Budget' ? 'MIS (FC)' : 'CORE'];
+        const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+        for (let row = 1; row <= range.e.r + 1; row++) {
+          const account = String(sheet[`${uploadType === 'Budget' ? 'A' : 'D'}${row}`]?.v || '');
+          if ((uploadType === 'Budget' && /^\d{9}$/.test(account)) || (uploadType !== 'Budget' && account.endsWith('-MIS000'))) {
+            sheet[`${uploadType === 'Budget' ? 'G' : 'N'}${row}`] = { t: 's', v: 'NOT_A_NUMBER' }; break;
+          }
+        }
+        file = new File([XLSX.write(book, { type: 'array', bookType: 'xlsx' })], 'Contoh-Validasi-Error.xlsx', { type: file.type });
+      }
+      await processFile(file);
+    } catch (reason) { setServerError(reason instanceof Error ? reason.message : 'Gagal membaca contoh.'); }
   };
 
   // Accepted & rejected computations
   const acceptedRows = parsedRows.filter((r) => r.isValid);
   const rejectedRows = parsedRows.filter((r) => !r.isValid);
-  const totalAmount = acceptedRows.reduce((sum, r) => sum + r.amount, 0);
+  const totalAmount = savedTotal ?? Number(serverPreview?.total_amount || 0);
 
   // 100% Accuracy checks
-  const is100PercentAccurate = parsedRows.length > 0 && rejectedRows.length === 0;
-  const accuracyPercentage = parsedRows.length > 0 
-    ? ((acceptedRows.length / parsedRows.length) * 100).toFixed(0) 
+  const is100PercentAccurate = !!serverPreview?.preview_id && parsedRows.length > 0 && rejectedRows.length === 0;
+  const accuracyPercentage = parsedRows.length > 0
+    ? ((acceptedRows.length / parsedRows.length) * 100).toFixed(0)
     : '0';
 
   // Filtered rows for step 2 preview
@@ -1803,7 +296,7 @@ export const UploadView: React.FC<{
 
   // Transition from Step 2 to Step 3
   const handleProceedToStep3 = () => {
-    const collision = checkPeriodCollision(uploadType, fiscalYear, uploadType === 'Monthly GL' ? targetMonth : undefined);
+    const collision = serverPreview?.already_loaded.existing_batch ? uiBatch(serverPreview.already_loaded.existing_batch) : null;
     setExistingBatch(collision);
     setGantiDataConfirmed(!collision);
     setCurrentStep(3);
@@ -1811,109 +304,26 @@ export const UploadView: React.FC<{
 
   // Final Commit action
   const handleCommit = async () => {
-    if (isSubmitting) return;
-
-    if (existingBatch && !gantiDataConfirmed) {
-      alert(language === 'ID' ? 'Anda harus mengonfirmasi penggantian GANTI DATA untuk melanjutkan.' : 'You must confirm the data replacement to proceed.');
-      return;
+    if (!serverPreview?.preview_id || isSubmitting) return;
+    if (existingBatch && (!gantiDataConfirmed || !replaceReason.trim())) {
+      setServerError('Konfirmasi GANTI DATA dan isi alasan penggantian terlebih dahulu.'); return;
     }
-
-    if (existingBatch && !replaceReason.trim()) {
-      alert(language === 'ID' ? 'Alasan penggantian data wajib diisi untuk catatan kepatuhan audit trail.' : 'Replacement reason justification is mandatory for compliance audit trail.');
-      return;
-    }
-
-    setIsSubmitting(true);
-
+    setIsSubmitting(true); setServerError('');
     try {
-      if (rawFileBuffer && uploadedFileName) {
-        const file = new File([rawFileBuffer], uploadedFileName, {
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        });
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const endpoint = uploadType === 'Budget' ? '/api/upload/budget' : '/api/upload/gl';
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          body: formData,
-        });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.error || 'Upload failed.');
-        }
-
-        void refreshDashboard();
-      }
-    } catch (error: any) {
-      alert(error?.message || 'Upload to API gagal. Silakan periksa file Excel dan koneksi server.');
-      setIsSubmitting(false);
-      return;
-    }
-
-    const result = commitUpload({
-      uploadType,
-      fiscalYear,
-      targetMonth: uploadType === 'Monthly GL' ? targetMonth : undefined,
-      fileName: uploadedFileName,
-      fileSize: uploadedFileSize,
-      rowCount: parsedRows.length,
-      acceptedRows: acceptedRows.length,
-      rejectedRows: rejectedRows.length,
-      totalAmount,
-      replaceReason: existingBatch ? replaceReason : undefined,
-      newCoas: detectedNewCoas.length > 0 ? detectedNewCoas : undefined,
-      parsedGlRecords: uploadType === 'Monthly GL' ? acceptedRows.map((r) => ({
-        coaCode: r.coaCode,
-        amount: r.amount,
-        description: r.description,
-        docNo: r.docNo,
-        vendor: r.vendor,
-        postingDate: r.postingDate,
-        periodMonth: targetMonth,
-        category: r.category,
-        department: r.department,
-        sectionCode: r.sectionCode,
-        currency: r.currency,
-        accountNumberPattern: r.accountPattern
-      })) : undefined,
-      parsedBudgetRecords: uploadType === 'Budget' ? (() => {
-        const budgetByCoa = new Map<string, { coaCode: string; monthly: Record<FiscalMonth, number>; annual: number }>();
-        acceptedRows.forEach(r => {
-          const code = r.coaCode;
-          if (!budgetByCoa.has(code)) {
-            budgetByCoa.set(code, {
-              coaCode: code,
-              monthly: { ...(r.monthly || {} as any) },
-              annual: r.amount
-            });
-          } else {
-            const existing = budgetByCoa.get(code)!;
-            existing.annual += r.amount;
-            if (r.monthly) {
-              FISCAL_MONTHS.forEach(m => {
-                existing.monthly[m] = (existing.monthly[m] || 0) + (r.monthly![m] || 0);
-              });
-            }
-          }
-        });
-        return Array.from(budgetByCoa.values());
-      })() : undefined
-    });
-
-    setCommitResult(result);
-    setIsSubmitting(false);
-
-    // Fire celebration confetti!
-    confetti({
-      particleCount: 80,
-      spread: 60,
-      origin: { y: 0.6 }
-    });
+      const response = await api.request<{ batch_id: number }>('/uploads/confirm', { method: 'POST', body: JSON.stringify({ preview_id: serverPreview.preview_id, decision: existingBatch ? 'REPLACE' : 'CONFIRM', replace_reason: existingBatch ? replaceReason : undefined }) });
+      if (!response.success) throw new Error(response.message);
+      setCommitResult({ success: true, batchId: String(response.data.batch_id), detailsSummary: 'Data disimpan dari pratinjau server. Dashboard menghitung batch aktif yang sama.' });
+      setSavedTotal(Number(serverPreview.total_amount));
+      setServerPreview(preview => preview ? { ...preview, preview_id: null } : null);
+      try { await refreshDashboard(); } catch { setServerError('Data berhasil disimpan, tetapi dashboard belum termuat. Muat ulang halaman.'); }
+      confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+    } catch (reason) { setServerError(reason instanceof Error ? reason.message : 'Gagal menyimpan upload.'); }
+    finally { setIsSubmitting(false); }
   };
 
   const handleResetUpload = () => {
+    if (serverPreview?.preview_id) void api.request('/uploads/confirm', { method: 'POST', body: JSON.stringify({ preview_id: serverPreview.preview_id, decision: 'CANCEL' }) }).catch(() => undefined);
+    setServerPreview(null); setSavedTotal(null); setServerError('');
     setCurrentStep(1);
     setParsedRows([]);
     setDetectedNewCoas([]);
@@ -1930,8 +340,11 @@ export const UploadView: React.FC<{
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-16">
+      {isProcessing && <p role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-700">{language === 'ID' ? 'Mengunggah dan memvalidasi file…' : 'Uploading and validating file…'}</p>}
+      {serverError && <p role="alert" className="whitespace-pre-line rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-700"><strong>{language === 'ID' ? 'Validasi / proses gagal (false)' : 'Validation / processing failed (false)'}</strong>{'\n'}{serverError}</p>}
+      {!isProcessing && !serverError && serverPreview?.preview_id && currentStep !== 3 && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-700">{language === 'ID' ? 'Validasi file berhasil (true). Data disimpan setelah konfirmasi.' : 'File validation passed (true). Data is saved after confirmation.'}</p>}
       {/* Wizard Progress Steps */}
-      <div 
+      <div
         id="upload-wizard-progress"
         className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs"
       >
@@ -1939,10 +352,10 @@ export const UploadView: React.FC<{
           {/* Step 1 */}
           <div className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-              currentStep === 1 
-                ? 'bg-[#1E5EFF] text-white shadow-sm' 
-                : currentStep > 1 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+              currentStep === 1
+                ? 'bg-[#1E5EFF] text-white shadow-sm'
+                : currentStep > 1
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-slate-100 text-slate-400'
             }`}>
               {currentStep > 1 ? <Check className="w-4 h-4" /> : '1'}
@@ -1958,10 +371,10 @@ export const UploadView: React.FC<{
           {/* Step 2 */}
           <div className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-              currentStep === 2 
-                ? 'bg-[#1E5EFF] text-white shadow-sm' 
-                : currentStep > 2 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+              currentStep === 2
+                ? 'bg-[#1E5EFF] text-white shadow-sm'
+                : currentStep > 2
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-slate-100 text-slate-400'
             }`}>
               {currentStep > 2 ? <Check className="w-4 h-4" /> : '2'}
@@ -1977,8 +390,8 @@ export const UploadView: React.FC<{
           {/* Step 3 */}
           <div className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-              currentStep === 3 
-                ? 'bg-[#1E5EFF] text-white shadow-sm' 
+              currentStep === 3
+                ? 'bg-[#1E5EFF] text-white shadow-sm'
                 : 'bg-slate-100 text-slate-400'
             }`}>
               3
@@ -2001,8 +414,8 @@ export const UploadView: React.FC<{
               1. {t.uploadStep1}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              {language === 'ID' 
-                ? 'Pilih target periode data dan unduh templat resmi yang telah diselaraskan dengan akun Master COA.' 
+              {language === 'ID'
+                ? 'Pilih target periode data dan unduh templat resmi yang telah diselaraskan dengan akun Master COA.'
                 : 'Select the data ingestion target and download the official template pre-aligned with registered COA accounts.'}
             </p>
           </div>
@@ -2015,19 +428,19 @@ export const UploadView: React.FC<{
               </label>
 
               {/* Monthly GL Actuals */}
-              <label 
-                onClick={() => setUploadType('Monthly GL')}
+              <label
+                onClick={() => { handleResetUpload(); setUploadType('Monthly GL'); }}
                 className={`p-4 rounded-2xl border-2 cursor-pointer flex items-start gap-3 transition ${
-                  uploadType === 'Monthly GL' 
-                    ? 'border-[#1E5EFF] bg-blue-50/40' 
+                  uploadType === 'Monthly GL'
+                    ? 'border-[#1E5EFF] bg-blue-50/40'
                     : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
-                <input 
-                  type="radio" 
-                  name="uploadType" 
-                  checked={uploadType === 'Monthly GL'} 
-                  onChange={() => setUploadType('Monthly GL')} 
+                <input
+                  type="radio"
+                  name="uploadType"
+                  checked={uploadType === 'Monthly GL'}
+                  onChange={() => setUploadType('Monthly GL')}
                   className="mt-1 text-[#1E5EFF]"
                 />
                 <div>
@@ -2041,26 +454,26 @@ export const UploadView: React.FC<{
               </label>
 
               {/* Annual Budget Allocation */}
-              <label 
-                onClick={() => setUploadType('Budget')}
+              <label
+                onClick={() => { handleResetUpload(); setUploadType('Budget'); }}
                 className={`p-4 rounded-2xl border-2 cursor-pointer flex items-start gap-3 transition ${
-                  uploadType === 'Budget' 
-                    ? 'border-[#1E5EFF] bg-blue-50/40' 
+                  uploadType === 'Budget'
+                    ? 'border-[#1E5EFF] bg-blue-50/40'
                     : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
-                <input 
-                  type="radio" 
-                  name="uploadType" 
-                  checked={uploadType === 'Budget'} 
-                  onChange={() => setUploadType('Budget')} 
+                <input
+                  type="radio"
+                  name="uploadType"
+                  checked={uploadType === 'Budget'}
+                  onChange={() => setUploadType('Budget')}
                   className="mt-1 text-[#1E5EFF]"
                 />
                 <div>
                   <div className="font-bold text-xs text-slate-900">{t.typeBudget}</div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     {language === 'ID'
-                      ? 'Tetapkan atau revisi alokasi pagu anggaran tahunan 12 bulan (Apr - Mar) untuk seluruh akun pos TI.'
+                      ? 'Tetapkan atau revisi alokasi budget anggaran tahunan 12 bulan (Apr - Mar) untuk seluruh akun pos TI.'
                       : 'Establish or revise 12-month annual approved budgets (Apr - Mar) for all IT accounts.'}
                   </p>
                 </div>
@@ -2078,12 +491,7 @@ export const UploadView: React.FC<{
                   onChange={(e) => setFiscalYear(e.target.value)}
                   className="w-full text-xs font-bold py-2.5 px-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1E5EFF]"
                 >
-                  <option value="FY2026/2027">
-                    {language === 'ID' ? 'FY 2026/2027 (Tahun Fiskal Aktif)' : 'FY 2026/2027 (Active Year)'}
-                  </option>
-                  <option value="FY2025/2026">
-                    {language === 'ID' ? 'FY 2025/2026 (Tahun Lalu Diaudit)' : 'FY 2025/2026 (Audited Prior Year)'}
-                  </option>
+                  {[...new Set([fiscalYear, ...availableFiscalYears])].map(fy => <option key={fy} value={fy}>{fy.replace('FY', 'FY ')}</option>)}
                 </select>
               </div>
 
@@ -2128,15 +536,15 @@ export const UploadView: React.FC<{
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             className={`border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition ${
-              dragActive 
-                ? 'border-[#1E5EFF] bg-blue-50/50' 
+              dragActive
+                ? 'border-[#1E5EFF] bg-blue-50/50'
                 : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
             }`}
           >
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx, .xls, .csv"
+              accept=".xlsx"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {
@@ -2151,7 +559,7 @@ export const UploadView: React.FC<{
               {t.dragDropText}
             </p>
             <p className="text-xs text-slate-400 mt-1">
-              {t.orBrowse} ({language === 'ID' ? 'Excel 2007+ .xlsx atau CSV' : 'Excel 2007+ .xlsx or CSV'})
+              {t.orBrowse} ({language === 'ID' ? 'Excel 2007+ .xlsx' : 'Excel 2007+ .xlsx'})
             </p>
           </div>
 
@@ -2212,7 +620,7 @@ export const UploadView: React.FC<{
               )}
 
               <button
-                onClick={() => setCurrentStep(1)}
+                onClick={handleResetUpload}
                 className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 transition self-start cursor-pointer px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -2228,7 +636,7 @@ export const UploadView: React.FC<{
                 <Sparkles className="w-4 h-4 text-[#1E5EFF] shrink-0" />
                 <span>{autoDetectionNotice}</span>
               </div>
-              <button 
+              <button
                 onClick={() => setAutoDetectionNotice(null)}
                 className="text-blue-500 hover:text-blue-800 text-xs px-2 py-0.5"
               >
@@ -2247,8 +655,8 @@ export const UploadView: React.FC<{
                   </div>
                   <div>
                     <h5 className="text-xs font-extrabold text-slate-900">
-                      {language === 'ID' 
-                        ? `Pembersihan Otomatis Berhasil (${filteredOutRows.length} Baris Non-Data Disaring)` 
+                      {language === 'ID'
+                        ? `Pembersihan Otomatis Berhasil (${filteredOutRows.length} Baris Non-Data Disaring)`
                         : `Auto-Cleanup Successful (${filteredOutRows.length} Non-Data Rows Filtered)`}
                     </h5>
                     <p className="text-[11px] text-slate-500">
@@ -2264,8 +672,8 @@ export const UploadView: React.FC<{
                   onClick={() => setShowFilteredDrawer(!showFilteredDrawer)}
                   className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold transition shrink-0 cursor-pointer"
                 >
-                  {showFilteredDrawer 
-                    ? (language === 'ID' ? 'Tutup Rincian' : 'Hide Details') 
+                  {showFilteredDrawer
+                    ? (language === 'ID' ? 'Tutup Rincian' : 'Hide Details')
                     : (language === 'ID' ? `Lihat ${filteredOutRows.length} Baris yang Disaring` : `View ${filteredOutRows.length} Filtered Rows`)}
                 </button>
               </div>
@@ -2292,7 +700,7 @@ export const UploadView: React.FC<{
                             </span>
                           </td>
                           <td className="py-2 px-3 text-slate-700 truncate max-w-xs font-sans">
-                            {fr.snippet || (language === 'ID' ? '(baris kosong)' : '(empty row)')}
+                            {fr.rawContent || (language === 'ID' ? '(baris kosong)' : '(empty row)')}
                           </td>
                         </tr>
                       ))}
@@ -2305,7 +713,7 @@ export const UploadView: React.FC<{
 
           {/* Accuracy Status Banner */}
           {is100PercentAccurate ? (
-            <div 
+            <div
               id="accuracy-100-success-banner"
               className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
             >
@@ -2321,8 +729,8 @@ export const UploadView: React.FC<{
                     </span>
                   </h4>
                   <p className="text-xs text-emerald-800 mt-0.5">
-                    {language === 'ID' 
-                      ? `Seluruh ${parsedRows.length} baris telah tervalidasi dan cocok dengan kode COA Master TI MIS tanpa kesalahan format.` 
+                    {language === 'ID'
+                      ? `Seluruh ${parsedRows.length} baris telah tervalidasi dan cocok dengan kode COA Master TI MIS tanpa kesalahan format.`
                       : `All ${parsedRows.length} rows have been validated and match MIS IT Master COA accounts without format issues.`}
                   </p>
                 </div>
@@ -2332,7 +740,7 @@ export const UploadView: React.FC<{
               </div>
             </div>
           ) : (
-            <div 
+            <div
               id="accuracy-incomplete-warning-banner"
               className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs"
             >
@@ -2343,8 +751,8 @@ export const UploadView: React.FC<{
                 <div>
                   <h4 className="text-sm font-bold text-rose-950 flex items-center gap-2">
                     <span>
-                      {language === 'ID' 
-                        ? 'Perhatian: Terdapat Baris Data Ditolak (Isu Format Data)' 
+                      {language === 'ID'
+                        ? 'Perhatian: Terdapat Baris Data Ditolak (Isu Format Data)'
                         : 'Warning: Rejected Format Issues Detected'}
                     </span>
                     <span className="bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
@@ -2387,8 +795,8 @@ export const UploadView: React.FC<{
               </div>
               <div className="text-2xl font-black font-mono text-rose-700 mt-1">{rejectedRows.length}</div>
               <div className="text-[11px] text-rose-600 mt-0.5 font-bold">
-                {rejectedRows.length > 0 
-                  ? (language === 'ID' ? `${rejectedRows.length} baris bermasalah` : `${rejectedRows.length} format issues`) 
+                {rejectedRows.length > 0
+                  ? (language === 'ID' ? `${rejectedRows.length} baris bermasalah` : `${rejectedRows.length} format issues`)
                   : (language === 'ID' ? '0 Masalah Format' : '0 Format Issues')}
               </div>
             </div>
@@ -2401,8 +809,8 @@ export const UploadView: React.FC<{
                 {accuracyPercentage}%
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">
-                {is100PercentAccurate 
-                  ? (language === 'ID' ? '100% Valid Sesuai COA' : '100% Valid Matching COA') 
+                {is100PercentAccurate
+                  ? (language === 'ID' ? 'Baris diterima valid; cek baris tersaring dan peringatan' : 'Accepted rows valid; review filtered rows and warnings')
                   : (language === 'ID' ? 'Perlu Koreksi Manual' : 'Action Required')}
               </div>
             </div>
@@ -2416,8 +824,8 @@ export const UploadView: React.FC<{
               </div>
               <div className="space-y-1">
                 <strong className="text-sm font-black text-rose-900 block">
-                  {language === 'ID' 
-                    ? 'Ditolak: Isu Format — Kolom Kode COA Tidak Ditemukan!' 
+                  {language === 'ID'
+                    ? 'Ditolak: Isu Format — Kolom Kode COA Tidak Ditemukan!'
                     : 'Rejected: Format Issues — Missing COA Code Column!'}
                 </strong>
                 <p className="text-rose-800 leading-relaxed text-xs">
@@ -2436,8 +844,8 @@ export const UploadView: React.FC<{
                 <div className="flex items-center gap-2 text-rose-900 font-bold text-xs sm:text-sm">
                   <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>
-                    {language === 'ID' 
-                      ? `Daftar ${rejectedRows.length} Baris Ditolak (Isu Format Data):` 
+                    {language === 'ID'
+                      ? `Daftar ${rejectedRows.length} Baris Ditolak (Isu Format Data):`
                       : `List of ${rejectedRows.length} Rejected Rows (Format Issues):`}
                   </span>
                 </div>
@@ -2504,12 +912,12 @@ export const UploadView: React.FC<{
                 <h5 className="text-xs font-black text-blue-900 flex items-center gap-1.5">
                   <Edit3 className="w-4 h-4 text-[#1E5EFF]" />
                   <span>
-                    {language === 'ID' 
-                      ? `Koreksi Baris ${editingRowIndex} ke Akun COA Resmi` 
+                    {language === 'ID'
+                      ? `Koreksi Baris ${editingRowIndex} ke Akun COA Resmi`
                       : `Correct Row ${editingRowIndex} to Registered COA Account`}
                   </span>
                 </h5>
-                <button 
+                <button
                   onClick={() => setEditingRowIndex(null)}
                   className="text-slate-400 hover:text-slate-700 text-xs cursor-pointer"
                 >
@@ -2588,11 +996,11 @@ export const UploadView: React.FC<{
                   <Sparkles className="w-4 h-4 text-[#1E5EFF] shrink-0" />
                   <span>
                     <strong>
-                      {language === 'ID' 
-                        ? `${detectedNewCoas.length} Akun GL Baru Terdeteksi Otomatis` 
+                      {language === 'ID'
+                        ? `${detectedNewCoas.length} Akun GL Baru Terdeteksi Otomatis`
                         : `${detectedNewCoas.length} New GL Accounts Auto-Detected`}
-                    </strong> {language === 'ID' 
-                      ? 'dari file aktual SAP (otomatis didaftarkan ke Master Data COA saat batch di-commit).' 
+                    </strong> {language === 'ID'
+                      ? 'dari file aktual SAP (otomatis didaftarkan ke Master Data COA saat batch di-commit).'
                       : 'from SAP actuals (automatically registered to Master COA upon batch commit).'}
                   </span>
                 </div>
@@ -2606,18 +1014,14 @@ export const UploadView: React.FC<{
               <div>
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
                   <span>
-                    {uploadType === 'Budget'
-                      ? (language === 'ID'
-                          ? `Pratinjau Alokasi Anggaran (${filteredPreviewRows.length} dari ${acceptedRows.length} Baris Valid)`
-                          : `Budget Allocation Preview (${filteredPreviewRows.length} of ${acceptedRows.length} Valid Rows)`)
-                      : (language === 'ID'
-                          ? `Pratinjau Data Aktual (${filteredPreviewRows.length} dari ${acceptedRows.length} Baris Valid)`
-                          : `Actual Data Preview (${filteredPreviewRows.length} of ${acceptedRows.length} Valid Rows)`)}
+                    {language === 'ID'
+                      ? `Pratinjau Data Aktual (${filteredPreviewRows.length} dari ${acceptedRows.length} Baris Valid)`
+                      : `Actual Data Preview (${filteredPreviewRows.length} of ${acceptedRows.length} Valid Rows)`}
                   </span>
                 </h4>
                 <span className="text-[11px] text-slate-500 font-mono">
-                  {is100PercentAccurate 
-                    ? (language === 'ID' ? '✓ 100% Seluruh Baris Terbaca & Lolos Validasi' : '✓ 100% All Rows Validated & Matched') 
+                  {is100PercentAccurate
+                    ? (language === 'ID' ? '✓ 100% Seluruh Baris Terbaca & Lolos Validasi' : '✓ 100% All Rows Validated & Matched')
                     : (language === 'ID' ? 'Menunggu perbaikan baris yang gagal' : 'Awaiting correction of failed rows')}
                 </span>
               </div>
@@ -2634,7 +1038,7 @@ export const UploadView: React.FC<{
                     className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 w-48 sm:w-60 focus:bg-white focus:ring-1 focus:ring-[#1E5EFF] outline-none"
                   />
                   {previewSearch && (
-                    <button 
+                    <button
                       onClick={() => setPreviewSearch('')}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
                     >
@@ -2671,18 +1075,14 @@ export const UploadView: React.FC<{
                   <tr>
                     <th className="py-2.5 px-3">{language === 'ID' ? 'Kode COA & Segmen' : 'COA Code & Segment'}</th>
                     <th className="py-2.5 px-3">{language === 'ID' ? 'Nama Akun & Kategori' : 'Account Name & Category'}</th>
-                    <th className="py-2.5 px-3 text-right">
-                      {uploadType === 'Budget'
-                        ? (language === 'ID' ? 'Nominal (Budget)' : 'Amount (Budget)')
-                        : (language === 'ID' ? 'Nominal (Aktual)' : 'Amount (Actual)')}
-                    </th>
+                    <th className="py-2.5 px-3 text-right">{language === 'ID' ? 'Nominal (Aktual)' : 'Amount (Actual)'}</th>
                     <th className="py-2.5 px-3">{language === 'ID' ? 'Vendor / Rekanan' : 'Vendor / Partner'}</th>
                     <th className="py-2.5 px-3">{language === 'ID' ? 'No. Dokumen / Ref' : 'Doc No. / Ref'}</th>
                     <th className="py-2.5 px-3">{language === 'ID' ? 'Status' : 'Status'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono">
-                  {(uploadType === 'Budget' ? filteredPreviewRows : filteredPreviewRows.slice(0, 100)).map((r) => (
+                  {filteredPreviewRows.slice(0, 100).map((r) => (
                     <tr key={r.rowNum} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-2 px-3">
                         <div className="font-bold text-slate-900">{r.coaCode}</div>
@@ -2704,7 +1104,7 @@ export const UploadView: React.FC<{
                         <span className={r.amount < 0 ? 'text-amber-700' : 'text-slate-900'}>
                           {formatCurrencyUSD(r.amount, true)}
                         </span>
-                        {r.amount < 0 && uploadType === 'Monthly GL' && (
+                        {r.amount < 0 && (
                           <div className="text-[9px] text-amber-600 font-sans font-bold">
                             {language === 'ID' ? 'Kredit / Reversal' : 'Credit / Reversal'}
                           </div>
@@ -2733,7 +1133,7 @@ export const UploadView: React.FC<{
                 </tbody>
               </table>
             </div>
-            {uploadType !== 'Budget' && filteredPreviewRows.length > 100 && (
+            {filteredPreviewRows.length > 100 && (
               <div className="text-[11px] text-slate-400 text-center font-medium">
                 {language === 'ID'
                   ? `Menampilkan 100 baris pertama dari ${filteredPreviewRows.length} baris. Seluruh ${filteredPreviewRows.length} baris akan diproses saat di-commit.`
@@ -2754,8 +1154,8 @@ export const UploadView: React.FC<{
             <div className="flex items-center gap-3">
               {!is100PercentAccurate && (
                 <span className="text-xs text-rose-600 font-semibold hidden sm:inline">
-                  {language === 'ID' 
-                    ? 'Tombol terkunci: Akurasi harus 100% untuk melanjutkan' 
+                  {language === 'ID'
+                    ? 'Tombol terkunci: Akurasi harus 100% untuk melanjutkan'
                     : 'Locked: 100% accuracy required to proceed'}
                 </span>
               )}
@@ -2828,7 +1228,7 @@ export const UploadView: React.FC<{
 
           {/* GANTI DATA Collision Alert Box */}
           {existingBatch ? (
-            <div 
+            <div
               id="ganti-data-warning-box"
               className="p-5 bg-amber-50 rounded-2xl border-2 border-amber-300 space-y-4 animate-in fade-in"
             >
@@ -2938,22 +1338,12 @@ export const UploadView: React.FC<{
 
             <button
               id="commit-upload-btn"
-              type="button"
               onClick={handleCommit}
-              disabled={isSubmitting}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#1E5EFF] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+              disabled={isSubmitting || !serverPreview?.preview_id || (!!existingBatch && (!gantiDataConfirmed || !replaceReason.trim()))}
+              className="flex items-center gap-2 px-6 py-2.5 bg-[#1E5EFF] hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition disabled:opacity-50 cursor-pointer"
             >
-              {isSubmitting ? (
-                <>
-                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  <span>{language === 'ID' ? 'Menyimpan...' : 'Saving...'}</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>{t.commitData}</span>
-                </>
-              )}
+              <Check className="w-4 h-4" />
+              <span>{t.commitData}</span>
             </button>
           </div>
         </div>
@@ -2962,13 +1352,13 @@ export const UploadView: React.FC<{
       {/* Upload Success Modal with Detailed Budget Status (Req 10) */}
       {commitResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div 
+          <div
             id="upload-success-card"
             className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 text-center space-y-4"
           >
             <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto border shadow-xs ${
-              commitResult.isOverBudget 
-                ? 'bg-rose-50 text-rose-600 border-rose-200' 
+              commitResult.isOverBudget
+                ? 'bg-rose-50 text-rose-600 border-rose-200'
                 : 'bg-emerald-50 text-emerald-600 border-emerald-200'
             }`}>
               {commitResult.isOverBudget ? (
@@ -2983,7 +1373,7 @@ export const UploadView: React.FC<{
                 {t.uploadSuccessTitle}
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                {language === 'ID' 
+                {language === 'ID'
                   ? <>Batch <strong className="font-mono text-slate-800">{commitResult.batchId}</strong> berhasil dicatat ke sistem dan matriks telah diperbarui.</>
                   : <>Batch <strong className="font-mono text-slate-800">{commitResult.batchId}</strong> successfully posted and matrix updated.</>}
               </p>
@@ -2991,22 +1381,20 @@ export const UploadView: React.FC<{
 
             {/* Detailed Budget Status Card (Req 10) */}
             <div className={`p-4 rounded-2xl border text-left space-y-3 ${
-              commitResult.isOverBudget 
-                ? 'bg-rose-50/60 border-rose-200' 
+              commitResult.isOverBudget
+                ? 'bg-rose-50/60 border-rose-200'
                 : 'bg-emerald-50/60 border-emerald-200'
             }`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-700">
-                  {language === 'ID' ? 'Status Kondisi Anggaran:' : 'Budget Variance Status:'}
+                  {language === 'ID' ? 'Status Penyimpanan:' : 'Storage Status:'}
                 </span>
                 <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
-                  commitResult.isOverBudget 
-                    ? 'bg-rose-100 text-rose-700 border-rose-300' 
+                  commitResult.isOverBudget
+                    ? 'bg-rose-100 text-rose-700 border-rose-300'
                     : 'bg-emerald-100 text-emerald-700 border-emerald-300'
                 }`}>
-                  {commitResult.isOverBudget 
-                    ? (language === 'ID' ? '🔴 MELEBIHI PAGU (OVER BUDGET)' : '🔴 OVER BUDGET') 
-                    : (language === 'ID' ? '🟢 SESUAI / HEMAT PAGU' : '🟢 ON / UNDER BUDGET')}
+                  {language === 'ID' ? 'DATA TERSIMPAN' : 'DATA SAVED'}
                 </span>
               </div>
 
@@ -3019,52 +1407,15 @@ export const UploadView: React.FC<{
                 </div>
                 <div className="p-2 bg-white/80 rounded-xl border border-slate-200/60">
                   <span className="text-[10px] text-slate-400 block font-sans">
-                    {language === 'ID' ? 'Pagu Pembanding' : 'Benchmark Budget'}
+                    {language === 'ID' ? 'Baris Tersimpan' : 'Stored Rows'}
                   </span>
-                  <span className="font-bold text-slate-700 text-sm">{formatCurrencyUSD(commitResult.targetBudgetAmount || 0)}</span>
+                  <span className="font-bold text-slate-700 text-sm">{acceptedRows.length}</span>
                 </div>
               </div>
 
-              {commitResult.isOverBudget ? (
-                <div className="p-2.5 bg-rose-100/70 border border-rose-200 rounded-xl text-xs text-rose-900 space-y-1">
-                  <div className="flex items-center justify-between font-bold">
-                    <span>{language === 'ID' ? 'Besaran Over Budget:' : 'Over Budget Amount:'}</span>
-                    <span className="font-mono font-extrabold text-sm text-rose-700">
-                      +{formatCurrencyUSD(commitResult.overBudgetAmount || 0)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span>{language === 'ID' ? 'Persentase Kelebihan:' : 'Excess Percentage:'}</span>
-                    <span className="font-mono font-bold text-rose-800">
-                      +{commitResult.overBudgetPercentage}% {language === 'ID' ? 'di atas alokasi' : 'above allocation'}
-                    </span>
-                  </div>
-                  {commitResult.overBudgetAccountsCount ? (
-                    <div className="text-[10px] text-rose-700 pt-0.5">
-                      ⚠️ {commitResult.overBudgetAccountsCount} {language === 'ID' ? 'pos akun COA melampaui pagu yang disetujui.' : 'COA accounts exceeded approved budget.'}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="p-2.5 bg-emerald-100/70 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
-                  <div className="flex items-center justify-between font-bold">
-                    <span>{language === 'ID' ? 'Efisiensi Anggaran:' : 'Budget Efficiency:'}</span>
-                    <span className="font-mono font-extrabold text-sm text-emerald-700">
-                      -{formatCurrencyUSD(Math.abs(commitResult.varianceAmount || 0))}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span>{language === 'ID' ? 'Persentase Varians:' : 'Variance Percentage:'}</span>
-                    <span className="font-mono font-bold text-emerald-800">
-                      {commitResult.overBudgetPercentage}% {language === 'ID' ? '(Dalam batas aman)' : '(Within safe margin)'}
-                    </span>
-                  </div>
-                </div>
-              )}
+              <p className="text-xs text-slate-600">{language === 'ID' ? 'Status anggaran dihitung dari data Budget dan GL aktif pada dashboard.' : 'Budget status is calculated from active Budget and GL uploads on the dashboard.'}</p>
 
-              <p className="text-[11px] text-slate-600 leading-snug">
-                {commitResult.detailsSummary}
-              </p>
+              <p className="text-xs text-slate-500">{commitResult.detailsSummary}</p>
             </div>
 
             <div className="pt-2 flex flex-col gap-2">
